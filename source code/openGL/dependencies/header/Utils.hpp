@@ -19,6 +19,11 @@
 #define FLOAT_SIZE sizeof(float)
 #define UINT_SIZE sizeof(unsigned)
 
+#ifndef GL_VIEW_DISTANCE
+#define GL_VIEW_DISTANCE 10000.0f
+#endif // 
+
+
 namespace gl {
 
     inline std::filesystem::path getShaderPath(const std::string& relativePath) {
@@ -487,6 +492,8 @@ namespace gl {
         glm::vec3 m_Target;
         glm::vec3 m_UpVector;
 
+        GLuint m_Shader;
+
         glm::vec3 Position;
         glm::vec3 Front;
         glm::vec3 Right;
@@ -494,7 +501,10 @@ namespace gl {
 
         float Yaw;
         float Pitch;
-        float MouseSensitivity;
+
+        float mouseSens;
+
+        float Fov;
 
         double lastY;
         double lastX;
@@ -503,68 +513,37 @@ namespace gl {
         glm::vec3 velocity;
     public:
 
-        camera(glm::vec3 position, glm::vec3 target, glm::vec3 upVector)
-            : m_Target(target), m_UpVector(upVector),
+        camera(const glm::vec3& position, const glm::vec3& target, const glm::vec3& upVector, const GLuint& shader)
+            : m_Target(target), m_UpVector(upVector), m_Shader(shader),
             Position(position), Front(glm::normalize(target - position)), Right(0.0f), Up(upVector),
-            velocity(glm::vec3(0.0f)), Yaw(-90.0f), Pitch(0.0f), MouseSensitivity(0.03f),
+            velocity(glm::vec3(0.0f)), Yaw(0.0f), Pitch(0.0f), mouseSens(0.03f), Fov(60.0f),
             lastY(0.0f), lastX(0.0f), speed(20.0f)
         {
         }
 
-        void processInput(gl::window& window) {
-            // --- MOUSE LOOK ---
-            double thisY = window.getCursorY();
-            double thisX = window.getCursorX();
+        const GLuint getShader() const { return m_Shader; }
 
-            Yaw += MouseSensitivity * (thisX - window.getLastCursorX());
-            Pitch += MouseSensitivity * (window.getLastCursorY() - thisY);
+        const float getFov() const { return Fov; }
 
-            window.setLastCursorX(thisX);
-            window.setLastCursorY(thisY);
+        void setFov(const float& other) { Fov = other; }
 
-            // Clamp Pitch
-            if (Pitch > 89.99f) Pitch = 89.99f;
-            if (Pitch < -89.99f) Pitch = -89.99f;
-
-            // Wrap Yaw
-            Yaw = std::fmod(Yaw + 180.0f, 360.0f) - 180.0f;
-
-            // --- UPDATE FRONT VECTOR ---
-            glm::vec3 front;
-            front.x = cos(glm::radians(Yaw)) * cos(glm::radians(Pitch));
-            front.y = sin(glm::radians(Pitch));
-            front.z = sin(glm::radians(Yaw)) * cos(glm::radians(Pitch));
-            Front = glm::normalize(front);
-
-            float dt = window.getDeltaTime();
-
-            // --- INPUT DIRECTION ---
-            glm::vec3 forward = glm::normalize(glm::vec3(Front.x, 0.0f, Front.z));
-            glm::vec3 right = glm::normalize(glm::cross(Front, Up));
-
-            if (window.getKeyPress(GLFW_KEY_W)) velocity += forward;
-            if (window.getKeyPress(GLFW_KEY_S)) velocity -= forward;
-            if (window.getKeyPress(GLFW_KEY_D)) velocity += right;
-            if (window.getKeyPress(GLFW_KEY_A)) velocity -= right;
-            if (window.getKeyPress(GLFW_KEY_SPACE)) velocity += Up;
-            if (window.getKeyPress(GLFW_KEY_LEFT_SHIFT)) velocity -= Up;
-            static float friction = 0.85f;
-            if (window.getKeyPress(GLFW_KEY_C)) velocity *= friction * 0.8f;
-            else velocity *= friction;
-            Position += velocity * dt * glm::vec3(2.7f);
-        }
+        glm::mat4 getProjectionMatrix(const float& aspectRatio, const float& fov) const { return glm::perspective(glm::radians(fov), aspectRatio, 0.1f, GL_VIEW_DISTANCE); }
 
         const glm::mat4 getViewMatrix() const { return glm::lookAt(Position, Position + Front, Up); }
 
-        void setSens(float sens) { MouseSensitivity = sens; }
+        void setTarget(const glm::vec3& target) { m_Target = target; }
 
-        void setTarget(glm::vec3 target) { m_Target = target; }
+        void setUpVector(const glm::vec3& upVector) { m_UpVector = upVector; }
 
-        void setUpVector(glm::vec3 upVector) { m_UpVector = upVector; }
+        void setSens(const float& other) { mouseSens = other; }
 
         const float getYaw() const { return Yaw; }
 
         const float getPitch() const { return Pitch; }
+
+        void setPos(const glm::vec3& other) { Position = other; }
+
+        const float getSens() const { return mouseSens; }
 
         const glm::vec3 getPos() const { return Position; }
 
@@ -574,7 +553,9 @@ namespace gl {
 
         const glm::vec3 getRight() const { return Right; }
 
-        const glm::vec3 getDirection() const { return Front; }
+        const glm::vec3 getFront() const { return Front; }
+
+        void setFront(const glm::vec3& front) { Front = front; }
     };
 
     //template <class T>

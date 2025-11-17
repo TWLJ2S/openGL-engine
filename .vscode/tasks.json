@@ -1,0 +1,74 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Debug x64",
+            "type": "shell",
+            "command": "powershell.exe",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}/source code/openGL/build.ps1",
+                "Debug",
+                "x64"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/source code/openGL"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "Build Release x64",
+            "type": "shell",
+            "command": "powershell.exe",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}/source code/openGL/build.ps1",
+                "Release",
+                "x64"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/source code/openGL"
+            },
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "Clean",
+            "type": "shell",
+            "command": "MSBuild.exe",
+            "args": [
+                "opengl.sln",
+                "/t:Clean",
+                "/p:Configuration=Debug",
+                "/p:Platform=x64"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/source code/openGL"
+            },
+            "group": "build",
+            "presentation": {
+                "reveal": "always"
+            },
+            "problemMatcher": "$msCompile"
+        }
+    ]
+}
+

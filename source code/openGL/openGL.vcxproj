@@ -453,6 +453,7 @@ copy "$(OutDir)openGL.exe" "C:\programming\openGL-engine\example";</Command>
     <ClInclude Include="dependencies\glm\vec3.hpp" />
     <ClInclude Include="dependencies\glm\vec4.hpp" />
     <ClInclude Include="dependencies\glm\vector_relational.hpp" />
+    <ClInclude Include="dependencies\header\Debug.hpp" />
     <ClInclude Include="dependencies\header\Entity.hpp" />
     <ClInclude Include="dependencies\header\Game.hpp" />
     <ClInclude Include="dependencies\header\Mesh.hpp" />
@@ -623,8 +624,16 @@ copy "$(OutDir)openGL.exe" "C:\programming\openGL-engine\example";</Command>
     <None Include="dependencies\glm\gtx\vector_angle.inl" />
     <None Include="dependencies\glm\gtx\vector_query.inl" />
     <None Include="dependencies\glm\gtx\wrap.inl" />
-    <None Include="resource\shader\frag.glsl" />
-    <None Include="resource\shader\vert.glsl" />
+    <None Include="resource\shader\frag.glsl">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">"C:\VulkanSDK\1.4.321.1\Bin\glslangValidator.exe" -V "%(FullPath)" -o "%(Filename).spv"</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(Filename).spv</Outputs>
+    </None>
+    <None Include="resource\shader\vert.glsl">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">"C:\VulkanSDK\1.4.321.1\Bin\glslangValidator.exe" -V "%(FullPath)" -o "%(Filename).spv"</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(Filename).spv</Outputs>
+    </None>
     <None Include="dependencies\GLEW\bin\glew32.dll" />
     <None Include="dependencies\GLFW\bin\glfw3.dll" />
   </ItemGroup>

@@ -7,9 +7,9 @@
 #include <gtc/matrix_transform.hpp>  
 #include <gtc/type_ptr.hpp>  
 
-#include <imgui.h>
-#include <imgui_impl_glfw.h>
-#include <imgui_impl_opengl3.h>
+//#include <imgui.h>
+//#include <imgui_impl_glfw.h>
+//#include <imgui_impl_opengl3.h>
 #include <stdio.h>
 
 #include <string>
@@ -18,7 +18,7 @@
 #include <stdexcept>
 #include <iostream>
 
-#define ENABLE_NORMAL_VSYNC 1
+#define ENABLE_VSYNC 1
 #define ENABLE_ADAPTIVE_VSYNC -1
 #define DISABLE_VSYNC 0
 
@@ -32,184 +32,252 @@ namespace gl {
 			GLfloat r, g, b, a;
 		};
 
-		struct shader {
-			GLuint shader;
-
-			void bind(GLuint shaderProgram) {
-				shader = shaderProgram;
-			}
-		};
-
-		void onMouseMove(double xpos, double ypos) {
-			m_CursorX = xpos;
-			m_CursorY = ypos;
-		}
-
 		static void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
 			if (width <= 0 || height <= 0) return;
 
 			gl::window* self = static_cast<gl::window*>(glfwGetWindowUserPointer(window));
 
-			self->m_Width = width;
-			self->m_Height = height;
+			self->m_Window.width = width;
+			self->m_Window.height = height;
 
 			glViewport(0, 0, width, height);
 		}
 
 		static void mouse_pos_callback(GLFWwindow* window, double xpos, double ypos) {
 			// Get the instance of your window class
+			//if (ImGui::GetIO().WantCaptureMouse) return;
+
 			gl::window* self = static_cast<gl::window*>(glfwGetWindowUserPointer(window));
 
+			//self->m_CursorCallBack.lastXPos = self->m_CursorCallBack.xPos;
+			//self->m_CursorCallBack.lastYPos = self->m_CursorCallBack.yPos;
+
 			// Forward the data to your instance method
-			self->onMouseMove(xpos, ypos);
+			self->m_CursorCallBack.x = xpos;
+			self->m_CursorCallBack.y = ypos;
 		}
 
 		static void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
 			// Get the instance of your window class
+			//if (ImGui::GetIO().WantCaptureMouse) return;
+
 			gl::window* self = static_cast<gl::window*>(glfwGetWindowUserPointer(window));
 
-			// Forward the data to your instance method
+			self->m_CursorCallBack.button = button;
+			self->m_CursorCallBack.action = action;
+			self->m_CursorCallBack.mode = mods;
+
+			if (!self->m_CursorCallBack.hideCursor && button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+				glfwSetCursorPos(self->m_Window.window, 0.0f, 0.0f);
+				glfwSetInputMode(self->m_Window.window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+				glfwSetCursorPosCallback(self->m_Window.window, mouse_pos_callback);
+				self->m_CursorCallBack.hideCursor = true;
+			}
 		}
 
 		static void window_focus_callback(GLFWwindow* window, int focused) {
 			gl::window* self = static_cast<gl::window*>(glfwGetWindowUserPointer(window));
 
-			self->hideCursor = focused;
+			self->m_CursorCallBack.hideCursor = focused;
+		}
+
+		static void window_key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+			//if (ImGui::GetIO().WantCaptureKeyboard)
+			//	return;
+
+			gl::window* self = static_cast<gl::window*>(glfwGetWindowUserPointer(window));
+
+			self->m_KeyCallBack.key = key;
+			self->m_KeyCallBack.scanCode = scancode;
+			self->m_KeyCallBack.action = action;
+			self->m_KeyCallBack.mods = mods;
+
+			if (self->m_CursorCallBack.hideCursor && key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+				glfwSetCursorPosCallback(self->m_Window.window, nullptr);
+				glfwSetCursorPos(self->m_Window.window, (float)self->m_Window.width / -2.0f, (float)self->m_Window.height / -2.0f);
+				glfwSetInputMode(self->m_Window.window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+				self->m_CursorCallBack.hideCursor = false;
+			}
 		}
 
 		static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
 			// xoffset → horizontal scroll (usually 0)
 			// yoffset → vertical scroll (positive = scroll up, negative = scroll down)
+			//if (ImGui::GetIO().WantCaptureMouse) return;
+
 			gl::window* self = static_cast<gl::window*>(glfwGetWindowUserPointer(window));
-			self->scrollX = xoffset;
-			self->scrollY = yoffset;
+			self->m_CursorCallBack.scrollX = xoffset;
+			self->m_CursorCallBack.scrollY = yoffset;
 		}
 
+		struct keyCallBack{
+			int key;
+			int scanCode;
+			int action;
+			int mods;
+		};
+
+		struct cursorCallBack {
+			int button;
+			int action;
+			int mode;
+
+			double scrollX;
+			double scrollY;
+
+			double x;
+			double y;
+
+			bool hideCursor;
+		};
+
+		struct windowCallBack {
+			GLFWwindow* window;
+			GLFWmonitor* monitor;
+			GLFWwindow* share;
+
+			int width;
+			int height;
+			std::string name;
+			bool ifinit;
+			double targetAspect;
+			float deltaTime;
+			float currentFrame;
+			float lastFrame;
+			int vsync;
+		};
+
+		struct UI {
+			std::string name;
+		};
 
 	private:
-		GLFWwindow* m_Window;
-		int m_Width;
-		int m_Height;
-		bool ifinit;
 		GLuint m_Shader;
-		double m_TargetAspect;
-		double m_CursorX, m_CursorY;
-		double m_LastCursorX, m_LastCursorY;
-		bool hideCursor;
-		float deltaTime;
-		float currentFrame;
-		float lastFrame;
-		int m_Vsync;
-		double scrollX;
-		double scrollY;
-		int mouseButton;
-		int mouseAction;
-		int mode;
+
+		windowCallBack m_Window;
+		keyCallBack m_KeyCallBack;
+		cursorCallBack m_CursorCallBack;
+
+		friend const void setFov(const float& other);
 	public:
 		window() = delete;
 
-		window(int width, int height, const char* name, GLFWmonitor* monitor = nullptr, GLFWwindow* share = nullptr) 
-			: m_Width(width),m_Height(height), ifinit(true), hideCursor(true), lastFrame((float)glfwGetTime())
-		{
-			glEnable(GL_DEPTH_TEST);
-			glDepthMask(GL_TRUE);
+		window(int width, int height, const char* name, GLFWmonitor* monitor = nullptr, GLFWwindow* share = nullptr) {
+			m_Window.monitor = monitor;
+			m_Window.share = share;
+
+			m_Window.width = width;
+			m_Window.height = height;
+			m_Window.name = name;
+			m_Window.targetAspect = (float)width / (float)height;
+			m_Window.deltaTime = glfwGetTime();
+			m_Window.currentFrame = 0.0f;
+			m_Window.lastFrame = 0.0f;
+			m_Window.vsync = 0;
+
+			m_CursorCallBack.x = 0.0f;
+			m_CursorCallBack.y = 0.0f;
+
 			glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 			glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 			glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 			glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-			m_Window = glfwCreateWindow(width, height, name, monitor, share);
+			m_Window.window = glfwCreateWindow(width, height, name, monitor, share);
 
-			if (!m_Window) { 
-				ifinit = false;
+			if (!m_Window.window) {
+				m_Window.ifinit = false;
 				throw std::runtime_error("Failed to create GLFW window");
 			}
 
-			glfwSetWindowUserPointer(m_Window, this);
+			glfwSetWindowUserPointer(m_Window.window, this);
 
-			glfwSetFramebufferSizeCallback(m_Window, framebuffer_size_callback);
-			glfwSetWindowFocusCallback(m_Window, window_focus_callback);
-			glfwSetScrollCallback(m_Window, scroll_callback);
-			glfwSetMouseButtonCallback(m_Window, mouse_button_callback);
-			glfwSetCursorPosCallback(m_Window, mouse_pos_callback);
+			glfwSetKeyCallback(m_Window.window, window_key_callback);
+			glfwSetFramebufferSizeCallback(m_Window.window, framebuffer_size_callback);
+			glfwSetWindowFocusCallback(m_Window.window, window_focus_callback);
+			glfwSetScrollCallback(m_Window.window, scroll_callback);
+			glfwSetMouseButtonCallback(m_Window.window, mouse_button_callback);
+			glfwSetCursorPosCallback(m_Window.window, mouse_pos_callback);
 
-			glfwSetInputMode(m_Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+			glfwSetInputMode(m_Window.window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 			
-			glfwMakeContextCurrent(m_Window);
+			glfwMakeContextCurrent(m_Window.window);
 		}
 
 		~window() {
-			glfwDestroyWindow(m_Window);
+			glfwDestroyWindow(m_Window.window);
 		}
 
-		inline const int getCursorButton() const { return mouseButton; }
+		bool run() {
+			glfwMakeContextCurrent(m_Window.window);
+			glfwPollEvents();
 
-		inline const int getCursorAction() const { return mouseAction; }
+			m_Window.currentFrame = (float)glfwGetTime();
+			m_Window.deltaTime = m_Window.currentFrame - m_Window.lastFrame;
+			m_Window.lastFrame = m_Window.currentFrame;
 
-		inline const int getCursorMode() const { return mode; }
+			return !(glfwGetKey(m_Window.window, GLFW_KEY_HOME) == GLFW_PRESS || glfwWindowShouldClose(m_Window.window));
+		}
 
-		inline const int getWidth() const { return m_Width; }
+		void addUI() {
 
-		inline const int getHeight() const { return m_Height; }
+		}
 
-		inline GLFWwindow* getWindow() const { return m_Window; }
+		inline const cursorCallBack getCursorCallBack() const { return m_CursorCallBack; }
+
+		inline const keyCallBack getKeyCallBack() const { return m_KeyCallBack; }
+
+		inline const windowCallBack getWindowCallBack() const { return m_Window; }
+
+		inline const int getCursorButton() const { return m_CursorCallBack.button; }
+
+		inline const int getCursorAction() const { return m_CursorCallBack.action; }
+
+		inline const int getCursorMode() const { return m_CursorCallBack.mode; }
+
+		inline const int getWidth() const { return m_Window.width; }
+
+		inline const int getHeight() const { return m_Window.height; }
+
+		inline GLFWwindow* getWindow() const { return m_Window.window; }
 
 		inline const GLuint getShader() const { return m_Shader; }
 
-		inline const float getTargetAspect() const { return m_TargetAspect; }
+		inline const float getTargetAspect() const { return m_Window.targetAspect; }
 
-		inline void setTargetAspect(float aspect) { m_TargetAspect = aspect; }
+		inline void setTargetAspect(float aspect) { m_Window.targetAspect = aspect; }
 
-		inline const double getCursorX() const { return m_CursorX; }
+		inline const double getCursorX() const { return m_CursorCallBack.x; }
 
-		inline const double getCursorY() const { return m_CursorY; }
+		inline const double getCursorY() const { return m_CursorCallBack.y; }
 
-		inline const double getLastCursorX() const { return m_LastCursorX; }
+		inline void setCursorX(const double& other) { m_CursorCallBack.x = other; }
 
-		inline const double getLastCursorY() const { return m_LastCursorY; }
+		inline void setCursorY(const double& other) { m_CursorCallBack.y = other; }
 
-		inline void setLastCursorX(double other) { m_LastCursorX = other; }
+		inline const double getScrollX() const { return m_CursorCallBack.scrollX; }
 
-		inline void setLastCursorY(double other) { m_LastCursorY = other; }
+		inline const double getScrollY() const { return m_CursorCallBack.scrollY; }
 
-		inline const double getScrollX() const { return scrollX; }
+		inline void setScrollX(const double& other) { m_CursorCallBack.scrollX = other; }
 
-		inline const double getScrollY() const { return scrollY; }
+		inline void setScrollY(const double& other) { m_CursorCallBack.scrollY = other; }
 
-		inline void resetScrollX() { scrollX = 0.0f; }
+		inline const bool ifHideCursor() const { return m_CursorCallBack.hideCursor; }
 
-		inline void resetScrollY() { scrollY = 0.0f; }
+		inline const float getDeltaTime() const { return m_Window.deltaTime; }
 
-		inline const bool ifHideCursor() const { return hideCursor; }
+		inline const float getFps() const { return 1.0f / m_Window.deltaTime; }
 
-		inline const float getDeltaTime() const { return deltaTime; }
+		const int vsync() const { return m_Window.vsync; }
 
-		inline const float getFps() const { return 1 / deltaTime; }
+		int getKeyPress(const int& key) { return glfwGetKey(m_Window.window, key) == GLFW_PRESS; }
 
-		bool run() {
-			glfwMakeContextCurrent(m_Window);
-			glfwPollEvents();
+		int getKeyHold(const int& key) { return glfwGetKey(m_Window.window, key) == GLFW_REPEAT; }
 
-			currentFrame = (float)glfwGetTime();
-			deltaTime = currentFrame - lastFrame;
-			lastFrame = currentFrame;
-			
-			if (hideCursor && glfwGetKey(m_Window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
-				glfwSetInputMode(m_Window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-				glfwSetCursorPosCallback(m_Window, nullptr);
-				glfwSetCursorPos(m_Window, (float)m_Width / (float)2, (float)m_Height / (float)2);
-				hideCursor = false;
-			}
+		int getKeyRelease(const int& key) { return glfwGetKey(m_Window.window, key) == GLFW_RELEASE; }
 
-			if (!hideCursor && glfwGetMouseButton(m_Window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
-				glfwSetCursorPos(m_Window, m_CursorX, m_CursorY);
-				glfwSetInputMode(m_Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-				glfwSetCursorPosCallback(m_Window, mouse_pos_callback);
-				hideCursor = true;
-			}
-			
-			return !(glfwGetKey(m_Window, GLFW_KEY_HOME) == GLFW_PRESS || glfwWindowShouldClose(m_Window));
-		}
+		bool operator!() { return !m_Window.ifinit; }
 
 		void clearColor(RGBA color) {
 			glClearColor(color.r, color.g, color.b, color.a);
@@ -227,12 +295,12 @@ namespace gl {
 		}
 
 		void swapBuffers() {
-			glfwSwapBuffers(m_Window);
+			glfwSwapBuffers(m_Window.window);
 		}
 
 		void linkShader(GLuint shaderProgram) {
 			m_Shader = shaderProgram;
-			glfwSetWindowUserPointer(m_Window, this);
+			glfwSetWindowUserPointer(m_Window.window, this);
 		}
 
 		void drawArray(GLuint shaderProgram, GLuint VAO, GLenum mode, GLint first, GLsizei count) {
@@ -264,18 +332,8 @@ namespace gl {
 
 		void vsync(int type) { 
 			glfwSwapInterval(type); 
-			m_Vsync = type;
+			m_Window.vsync = type;
 		}
-
-		const int vsync() const { return m_Vsync; }
-
-		int getKeyPress(int key) { return glfwGetKey(m_Window, key) == GLFW_PRESS; }
-
-		int getKeyHold(int key) { return glfwGetKey(m_Window, key) == GLFW_REPEAT; }
-
-		int getKeyRelease(int key) { return glfwGetKey(m_Window, key) == GLFW_RELEASE; }
-
-		bool operator!() { return !ifinit; }
 	};
 
 	struct UIElement {
@@ -283,100 +341,6 @@ namespace gl {
 		std::string label;
 		void* data;
 		float minVal, maxVal;
-	};
-
-	class imgui {
-	private:
-		GLFWwindow* m_Window;
-		const char* m_Title;
-		ImGuiIO* m_IO;
-
-		enum ElementType {
-			TEXT = 0,
-			CHECKBOX,
-			SLIDER_FLOAT,
-			SLIDER_INT,
-			BUTTON,
-			INPUT_TEXT
-		};
-
-		std::vector<UIElement> m_Elements;
-	public:
-		imgui(GLFWwindow* window, const char* title)
-			: m_Window(window), m_Title(title)
-		{
-			IMGUI_CHECKVERSION();
-			ImGui::CreateContext();
-			m_IO = &ImGui::GetIO();
-			ImGui::StyleColorsDark();
-			ImGui_ImplGlfw_InitForOpenGL(m_Window, true);
-			ImGui_ImplOpenGL3_Init("#version 330");
-		}
-
-		void addText(const std::string& text) {
-			m_Elements.push_back({ TEXT, text, nullptr, 0.0f, 0.0f });
-		}
-
-		void clearElements() {
-			m_Elements.clear();
-		}
-
-		void addCheckbox(const std::string& label, bool* value) {
-			m_Elements.push_back({ CHECKBOX, label, value, 0.0f, 0.0f });
-		}
-
-		void addSliderFloat(const std::string& label, float* value, float min, float max) {
-			m_Elements.push_back({ SLIDER_FLOAT, label, value, min, max });
-		}
-
-		void addSliderInt(const std::string& label, int* value, int min, int max) {
-			m_Elements.push_back({ SLIDER_INT, label, value, (float)min, (float)max });
-		}
-
-		void setFont(float size) { m_IO->FontGlobalScale = size; }
-
-		void setWindowSize(unsigned x, unsigned y) { ImGui::SetNextWindowSize(ImVec2(x, y)); }
-
-		void render() {
-			ImGui_ImplOpenGL3_NewFrame();
-			ImGui_ImplGlfw_NewFrame();
-			ImGui::NewFrame();
-
-			ImGui::Begin(m_Title);
-
-			for (UIElement& e : m_Elements) {
-				switch (e.type) {
-				case TEXT:
-					ImGui::Text("%s", e.label.c_str());
-					break;
-				case CHECKBOX:
-					ImGui::Checkbox(e.label.c_str(), (bool*)e.data);
-					break;
-				case SLIDER_FLOAT:
-					ImGui::SliderFloat(e.label.c_str(), (float*)e.data, e.minVal, e.maxVal);
-					break;
-				case SLIDER_INT:
-					ImGui::SliderInt(e.label.c_str(), (int*)e.data, (int)e.minVal, (int)e.maxVal);
-					break;
-				case BUTTON:
-					if (ImGui::Button(e.label.c_str())) {
-						// TODO: store callback
-					}
-					break;
-				}
-			}
-
-			ImGui::End();
-
-			ImGui::Render();
-			ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-		}
-
-		~imgui() {
-			ImGui_ImplOpenGL3_Shutdown();
-			ImGui_ImplGlfw_Shutdown();
-			ImGui::DestroyContext();
-		}
 	};
 
 }

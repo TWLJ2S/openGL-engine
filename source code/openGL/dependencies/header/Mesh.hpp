@@ -202,17 +202,8 @@ namespace gl {
             const glm::vec3& rotation) // new optional param
         {
             glUseProgram(shaderProgram);
-
-            glm::mat4 model(1.0f);
-                // --- build model matrix as before ---
-            model = glm::translate(model, pos);
-            model = glm::rotate(model, glm::radians(rotation.x), glm::vec3(1, 0, 0));
-            model = glm::rotate(model, glm::radians(rotation.y), glm::vec3(0, 1, 0));
-            model = glm::rotate(model, glm::radians(rotation.z), glm::vec3(0, 0, 1));
-            model = glm::scale(model, scale);
-
             GLint modelLoc = glGetUniformLocation(shaderProgram, "model");
-            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(glm::scale(glm::rotate(glm::rotate(glm::rotate(glm::translate(glm::mat4(1.0f), pos), glm::radians(rotation.x), glm::vec3(1, 0, 0)), glm::radians(rotation.y), glm::vec3(0, 1, 0)), glm::radians(rotation.z), glm::vec3(0, 0, 1)), scale)));
 
             // --- bind textures, upload lights, draw VAO ---
             for (int i = 0; i < MAX_TEXTURE_UNITS; ++i) {

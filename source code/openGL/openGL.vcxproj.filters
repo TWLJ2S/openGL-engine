@@ -962,6 +962,9 @@
     <ClInclude Include="dependencies\header\Texture.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="dependencies\header\Debug.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dependencies\stb_image\stb_image.cpp">
@@ -1413,11 +1416,11 @@
     <None Include="dependencies\glm\gtx\wrap.inl">
       <Filter>Header Files</Filter>
     </None>
-    <None Include="resource\shader\frag.glsl" />
-    <None Include="resource\shader\vert.glsl" />
     <None Include="dependencies\GLEW\bin\glew32.dll" />
     <None Include="dependencies\GLFW\bin\glfw3.dll" />
     <None Include="dependencies\assimp\bin\x64\assimp-vc143-mt.dll" />
+    <None Include="resource\shader\frag.glsl" />
+    <None Include="resource\shader\vert.glsl" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="resource\texture\fructos.png">
