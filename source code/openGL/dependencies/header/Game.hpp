@@ -48,9 +48,8 @@ namespace gl {
 			double deltaY = lastY - thisY;
 
 			// Limit delta to prevent huge jumps (e.g., from window focus changes)
-			const double maxDelta = 100.0;
-			deltaX = glm::clamp(deltaX, -maxDelta, maxDelta);
-			deltaY = glm::clamp(deltaY, -maxDelta, maxDelta);
+			deltaX = glm::clamp(deltaX, (double)-100.0f, (double)100.0f);
+			deltaY = glm::clamp(deltaY, (double)-100.0f, (double)100.0f);
 
 			Yaw += sens * -deltaX;
 			Pitch += sens * deltaY;
@@ -62,6 +61,49 @@ namespace gl {
 			Yaw = std::fmod(Yaw + 180.0f, 360.0f) - 180.0f;
 
 			//std::cout << "X: " << Yaw << "\nY: " << Pitch << std::endl;
+
+			//scope in/out
+
+			static bool ifpress = false;
+			static unsigned char zoom = 0;
+			static float fov = 60.0f;
+			if (window.getCursorCallBack().button == GLFW_MOUSE_BUTTON_RIGHT) {
+				if (ifpress) {
+					if (window.getCursorAction() == GLFW_RELEASE) ifpress = false;
+				}
+				else if (window.getCursorAction() == GLFW_PRESS) {
+					ifpress = true;
+
+					zoom = (zoom + 1) % 3;
+
+					if (zoom == 0) fov = 60.0f;
+					else if (zoom == 1) fov = 35.0f;
+					else if (zoom == 2) fov = 20.0f;
+
+					switch (zoom) {
+					case 0: {
+						fov = 60.0f;
+						break;
+					}
+					case 1: {
+						fov = 35.0f;
+						break;
+					}
+					case 2: {
+						fov = 20.0f;
+						break;
+					}
+					default: {
+						fov = 60.0f;
+						zoom = 0;
+						break;
+					}
+					}
+				}
+			}
+
+			// update the projection matrix
+			if (fov != getFov()) setFov(glm::mix(getFov(), fov, 15.0f * window.getDeltaTime()), (float)window.getWidth() / (float)window.getHeight());
 
 			// --- UPDATE FRONT VECTOR ---
 			glm::vec3 front;
@@ -81,7 +123,7 @@ namespace gl {
 
 			glm::vec3 right = glm::normalize(glm::cross(Front, m_Camera.getUpVector()));
 
-			float frictionCoeff = 0.92f; // Friction coefficient
+			float friction = 0.85f; // Friction coefficient
 
 			// Use getKeyPress() to check if keys are currently held (not just callback events)
 			// This allows continuous movement while keys are held down
@@ -91,10 +133,10 @@ namespace gl {
 			if (window.getKeyPress(GLFW_KEY_D)) m_Velocity += right;
 			if (window.getKeyPress(GLFW_KEY_SPACE)) m_Velocity += m_Camera.getUpVector();
 			if (window.getKeyPress(GLFW_KEY_LEFT_SHIFT)) m_Velocity -= m_Camera.getUpVector();
-			if (window.getKeyPress(GLFW_KEY_C)) frictionCoeff = 0.6f;
+			if (window.getKeyPress(GLFW_KEY_C)) friction = 0.6f;
 			
 			// Apply friction to slow down velocity
-			m_Velocity *= frictionCoeff;
+			m_Velocity *= friction;
 
 			m_Camera.setPos(m_Camera.getPos() + (m_Velocity * window.getDeltaTime()));
 
@@ -129,34 +171,27 @@ namespace gl {
 		void update(gl::window& window, gl::shader shader) {
 			shader.useProgram();
 
-			// Initialize camera front vector on first frame
-			//static bool firstUpdate = true;
-			//if (firstUpdate) {
-			//	glm::vec3 front;
-			//	front.x = cos(glm::radians(Yaw)) * cos(glm::radians(Pitch));
-			//	front.y = sin(glm::radians(Pitch));
-			//	front.z = sin(glm::radians(Yaw)) * cos(glm::radians(Pitch));
-			//	glm::vec3 Front = (glm::length(front) > 0.0f)
-			//		? glm::normalize(front)
-			//		: glm::vec3(0.0f, 0.0f, -1.0f);
-			//	m_Camera.setFront(Front);
-			//	firstUpdate = false;
-			//}
-
 			// --- MOUSE LOOK ---
 			processInput(window);
 
 			m_View = m_Camera.getViewMatrix();
-			m_Proj = glm::perspective(glm::radians(m_Camera.getFov()), (float)window.getWidth() / (float)window.getHeight(), 0.1f, GL_MAX_VIEW_DISTANCE);
+			m_Proj = glm::infinitePerspective(glm::radians(m_Camera.getFov()), (float)window.getWidth() / (float)window.getHeight(), 0.1f);
 
 			m_Model.uniformMatrix4fv();
 			m_View.uniformMatrix4fv();
 			m_Proj.uniformMatrix4fv();
+
+			GLint camPosLoc = glGetUniformLocation(shader.getProgram(), "camPos");
+			if (camPosLoc >= 0) {
+				glUniform3fv(camPosLoc, 1, glm::value_ptr(getPos()));
+			}
 		}
 
 		void setFov(const float& fov, const float& aspect) { m_Camera.setFov(fov); }
 
 		const float getFov() const { return m_Camera.getFov(); }
+
+		void setSens(const float& other) { m_Camera.setSens(other); }
 
 		void setModel(glm::mat4& other) { m_Model = other; }
 
@@ -173,7 +208,7 @@ namespace gl {
 		glm::vec3 getDirRadians() const { return m_Camera.getFront(); }
 	};
 
-	glm::mat4 getItemModel(const camera& cam, const glm::vec3& offset, const glm::vec3& scale) {
+	glm::mat4 getItemModelMat4(const camera& cam, const glm::vec3& offset, const glm::vec3& scale) {
 		return glm::scale(
 			glm::translate(
 				glm::translate(glm::mat4(1.0f), cam.getPos()) *
@@ -187,28 +222,22 @@ namespace gl {
 	glm::mat4 getItemModelQuat(
 		const gl::camera& cam,
 		const glm::vec3& offset,
-		const glm::vec3& scale,
+		const float& scale,
 		const glm::quat& additionalRotation = glm::identity<glm::quat>(),
 		const glm::vec2& rot = glm::vec2(0.0f)
 	) {
-		// Build final rotation quaternion (camera * yaw * pitch * additional)
-		glm::quat finalRotation =
-			glm::quat_cast(glm::mat3(glm::inverse(glm::lookAt(
-				glm::vec3(0.0f),
-				-cam.getFront(),
-				cam.getUpVector()
-			))))
-			* glm::angleAxis(glm::radians(rot.x), glm::vec3(0.0f, 1.0f, 0.0f))
-			* glm::angleAxis(glm::radians(rot.y), glm::vec3(1.0f, 0.0f, 0.0f))
-			* additionalRotation;
 
-		// Build model matrix
-		glm::mat4 model = glm::translate(glm::mat4(1.0f), cam.getPos());
-		model *= glm::toMat4(finalRotation); // single line rotation
-		model = glm::translate(model, offset);
-		model = glm::scale(model, scale);
-
-		return model;
+		return glm::scale(
+			glm::translate(glm::mat4(1), cam.getPos()) *
+			glm::toMat4(
+				glm::quat_cast(glm::mat3(glm::inverse(glm::lookAt(glm::vec3(0), -cam.getFront(), cam.getUpVector())))) *
+				glm::angleAxis(glm::radians(rot.x), glm::vec3(0, 1, 0)) *
+				glm::angleAxis(glm::radians(rot.y), glm::vec3(1, 0, 0)) *
+				additionalRotation
+			) *
+			glm::translate(glm::mat4(1), offset),
+			glm::vec3(scale)
+		);
 	}
 
 }

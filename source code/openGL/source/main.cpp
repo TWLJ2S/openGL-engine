@@ -11,6 +11,13 @@
 
 #define WEAPON_OFFSET glm::vec3(-0.2f, -0.35f, 0.4f)
 
+void a(bool& pause){
+    if (ImGui::Button("Press Me")) {
+        std::cout << "Button pressed!" << std::endl;
+        pause = false;
+    }
+}
+
 int main() {
     if (!glfwInit()) return -1;
     gl::window window(960, 540, "window");
@@ -38,47 +45,58 @@ int main() {
 
     gl::player player(gl::camera(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), shader.getProgram()));
 
-    unsigned char zoom = 0;
     bool ifpress = false;
-    float fov = 60.0f;
+    bool pause = true;
 
-    while (window.run()) {
-        // Clear screen
-        window.clearColor(glm::vec4(1.0f, 1.0f, 1.0f, 1.0f)); // Dark blue-gray background
+    window.addUI("MyUI", glm::vec2(window.getWidth(), window.getHeight()), glm::vec2(0.0f), (bool*)1, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove, [](){});
 
-        if (window.getCursorCallBack().button == GLFW_MOUSE_BUTTON_RIGHT) {
+    while (window.ifRun()) {
+        try {
+            window.clearColor(glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
+
+            window.imguiNewFrame();
+
             if (ifpress) {
-                if (window.getCursorAction() == GLFW_RELEASE) ifpress = false;
+                if (window.getKeyRelease(GLFW_KEY_ESCAPE)) {
+                    ifpress = false;
+                }
             }
-            else if (window.getCursorAction() == GLFW_PRESS) {
-                ifpress = true;
+            else {
+                if (window.getKeyPress(GLFW_KEY_ESCAPE)) {
+                    pause = !pause;
+                    ifpress = true;
+                }
+            }            
 
-                zoom = (zoom + 1) % 3;
-
-                if (zoom == 0) fov = 60.0f;
-                else if (zoom == 1) fov = 35.0f;
-                else if (zoom == 2) fov = 20.0f;                
+            if (pause) {
+                window.setInputMode(GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                window.setUI(0, "settings", glm::vec2(window.getWidth(), window.getHeight()), glm::vec2(0.0f), 
+                    (bool*)1, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove,
+                    [&]() {
+                        if (ImGui::Button("resume", ImVec2(200, 40))) {
+                            pause = false;
+                        }
+                    }
+                );
+                window.renderUI(0);
             }
-        }
+            else {
+                window.setInputMode(GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                player.update(window, shader);
+            }
 
-        // update the projection matrix
-        if(fov != player.getFov()) player.setFov(glm::mix(player.getFov(), fov, 15.0f * window.getDeltaTime()), (float)window.getWidth() / (float)window.getHeight());
+            // Draw with yaw offset (adjust the angle as needed - positive = rotate right, negative = rotate left)
+            awp.draw(shader.getProgram(), gl::getItemModelQuat(player.getCam(), WEAPON_OFFSET, 1.5f, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), glm::vec2(-20.0f, 15.0f)));
 
-        player.update(window, shader);
-        
-        // Set camera position for fragment shader
-        GLint camPosLoc = glGetUniformLocation(shader.getProgram(), "camPos");
-        if (camPosLoc >= 0) {
-            glUniform3fv(camPosLoc, 1, glm::value_ptr(player.getPos()));
-        }
-        
-        // Draw with yaw offset (adjust the angle as needed - positive = rotate right, negative = rotate left)
-        awp.draw(shader.getProgram(), gl::getItemModelQuat(player.getCam(), WEAPON_OFFSET, glm::vec3(1.5f), glm::quat(1.0f, 0.0f, 0.0f, 0.0f), glm::vec2(-20.0f, 15.0f)));
+            // Draw model in front of camera (adjust position as needed)
+            model.draw(shader.getProgram(), glm::vec3(0.0f, 0.0f, -5.0f), glm::vec3(1.0f), glm::vec3(0.0f));
 
-        // Draw model in front of camera (adjust position as needed)
-        model.draw(shader.getProgram(), glm::vec3(0.0f, 0.0f, -5.0f), glm::vec3(1.0f), glm::vec3(0.0f));
+            window.imguiRender();
 
-        window.swapBuffers();
+            window.swapBuffers();
+        } catch (const std::exception& e) {
+			std::cout << e.what() << std::endl;
+		}
 
         std::this_thread::sleep_for(std::chrono::milliseconds(6));
     }
