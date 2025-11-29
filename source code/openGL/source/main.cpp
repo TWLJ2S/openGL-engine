@@ -48,7 +48,14 @@ int main() {
     bool ifpress = false;
     bool pause = true;
 
-    window.addUI("MyUI", glm::vec2(window.getWidth(), window.getHeight()), glm::vec2(0.0f), (bool*)1, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove, [](){});
+    window.addUI("MyUI", glm::vec2(window.getWidth(), window.getHeight()), glm::vec2(0.0f), (bool*)1, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove, 
+        [&](){
+            float aspect = (float)window.getWidth() / 4.0f;
+            if (ImGui::Button("resume", ImVec2(4.0f / 10.0f * aspect, 3.0f / 10.0f * aspect))) {
+                pause = false;
+            }
+        }
+    );
 
     while (window.ifRun()) {
         try {
@@ -70,14 +77,7 @@ int main() {
 
             if (pause) {
                 window.setInputMode(GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-                window.setUI(0, "settings", glm::vec2(window.getWidth(), window.getHeight()), glm::vec2(0.0f), 
-                    (bool*)1, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove,
-                    [&]() {
-                        if (ImGui::Button("resume", ImVec2(200, 40))) {
-                            pause = false;
-                        }
-                    }
-                );
+                window.setUI(0, "settings", glm::vec2(window.getWidth(), window.getHeight()), glm::vec2(0.0f), 0, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
                 window.renderUI(0);
             }
             else {

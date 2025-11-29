@@ -275,25 +275,36 @@ namespace gl {
 			}
 		}
 
-		template<typename Func = std::nullptr_t>
+		template<typename Func>
+		void addUIElement(unsigned i, Func&& func) {
+			m_UI[i].addElement(std::function<void()>(std::forward<Func>(func)));
+		}
+
 		void setUI(size_t index,
 			const std::string& n = "",
 			const glm::vec2& s = { 200.f, 200.f },
 			const glm::vec2& p = { 50.f, 50.f },
 			bool open = true,
-			ImGuiWindowFlags fs = ImGuiWindowFlags_None,
-			Func func = Func{})
+			ImGuiWindowFlags fs = ImGuiWindowFlags_None)
 		{
+			auto buffer = m_UI[index].elements;
 			m_UI[index] = UIWindow(n, s, p, open, fs);
 
-			if constexpr (!std::is_same_v<std::decay_t<Func>, std::nullptr_t>) {
-				m_UI[index].addElement(std::function<void()>(std::move(func)));
-			}
+			for (auto& b : buffer)
+				m_UI[index].addElement(b);
 		}
 
 		template<typename Func>
-		void addUIElement(unsigned i, Func&& func) {
-			m_UI[i].addElement(std::function<void()>(std::forward<Func>(func)));
+		void setUI(size_t index,
+			const std::string& n,
+			const glm::vec2& s = { 200.f, 200.f },
+			const glm::vec2& p = { 50.f, 50.f },
+			bool open = true,
+			ImGuiWindowFlags fs = ImGuiWindowFlags_None,
+			Func&& func = nullptr)
+		{
+			m_UI[index] = UIWindow(n, s, p, open, fs);
+			m_UI[index].addElement(std::function<void()>(std::forward<Func>(func)));
 		}
 
 		template<typename Func>
