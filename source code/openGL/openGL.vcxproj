@@ -139,6 +139,8 @@ copy "$(SolutionDir)dependencies\assimp\bin\x64\assimp-vc143-mt.dll" "$(OutDir)"
       <AdditionalIncludeDirectories>$(SolutionDir)dependencies\GLFW\include;$(SolutionDir)dependencies\GLEW\include;%(AdditionalIncludeDirectories);$(ProjectDir)dependencies\glm;$(ProjectDir)dependencies\header;$(ProjectDir)dependencies\imgui;$(ProjectDir)dependencies\stb_image;$(ProjectDir)dependencies\assimp\include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

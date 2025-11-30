@@ -19,9 +19,9 @@
 #include <iostream>
 #include <memory>
 
-#define ENABLE_VSYNC 1
-#define ENABLE_ADAPTIVE_VSYNC -1
-#define DISABLE_VSYNC 0
+#define GL_ENABLE_VSYNC 1
+#define GL_ENABLE_ADAPTIVE_VSYNC 2
+#define GL_DISABLE_VSYNC 0
 
 namespace gl {
 
@@ -442,6 +442,9 @@ namespace gl {
 		}
 
 		void swapBuffers() {
+			m_CursorCallBack.scrollX = 0.0f;
+			m_CursorCallBack.scrollY = 0.0f;
+
 			glfwSwapBuffers(m_WindowCallBack.window);
 		}
 

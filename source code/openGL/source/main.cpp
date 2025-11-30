@@ -3,20 +3,9 @@
 #include <Utils.hpp>
 #include <Mesh.hpp>
 
-#include <Debug.hpp>
-
 #include <iostream>
 #include <thread>
 #include <chrono>
-
-#define WEAPON_OFFSET glm::vec3(-0.2f, -0.35f, 0.4f)
-
-void a(bool& pause){
-    if (ImGui::Button("Press Me")) {
-        std::cout << "Button pressed!" << std::endl;
-        pause = false;
-    }
-}
 
 int main() {
     if (!glfwInit()) return -1;
@@ -26,7 +15,7 @@ int main() {
     glDisable(GL_BLEND);
     glEnable(GL_DEPTH_TEST);
 
-    window.vsync(ENABLE_VSYNC);    
+    window.vsync(GL_DISABLE_VSYNC);    
 
     if (glewInit() != GLEW_OK) return -1;
 
@@ -34,12 +23,12 @@ int main() {
 
     shader.useProgram();
 
+    gl::object M4A1("resource/model/M4A1.glb");
     gl::object awp("resource/model/awp.glb");
-    gl::object model("resource/model/player.glb");
+    gl::object usp("resource/model/USPS.glb");
+    gl::object model("resource/model/model.glb");
 
     // Add lights to objects so they can be rendered
-    awp.addLight(glm::vec3(5.0f, 5.0f, 5.0f), glm::vec3(1.0f, 1.0f, 1.0f));
-    awp.addLight(glm::vec3(-5.0f, 5.0f, -5.0f), glm::vec3(0.5f, 0.5f, 0.8f));
     model.addLight(glm::vec3(5.0f, 5.0f, 5.0f), glm::vec3(1.0f, 1.0f, 1.0f));
     model.addLight(glm::vec3(-5.0f, 5.0f, -5.0f), glm::vec3(0.5f, 0.5f, 0.8f));
 
@@ -48,12 +37,39 @@ int main() {
     bool ifpress = false;
     bool pause = true;
 
-    window.addUI("MyUI", glm::vec2(window.getWidth(), window.getHeight()), glm::vec2(0.0f), (bool*)1, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove, 
+    window.addUI("settings", glm::vec2(window.getWidth(), window.getHeight()), glm::vec2(0.0f), (bool*)1, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove, 
         [&](){
             float aspect = (float)window.getWidth() / 4.0f;
-            if (ImGui::Button("resume", ImVec2(4.0f / 10.0f * aspect, 3.0f / 10.0f * aspect))) {
+            ImVec2 size(4.0f / 10.0f * aspect, 3.0f / 10.0f * aspect);
+            if (ImGui::Button("resume", size)) {
                 pause = false;
             }
+        }
+    );
+
+    window.addUI("fps counter", glm::vec2(200.0f, 150.0f), glm::vec2(0.0f), (bool*)1, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove,
+        [&]() {
+            ImGui::Text("%s", std::string("fps: " + std::to_string(window.getFps())).c_str());
+        }
+    );
+
+    glm::vec3 offset(-0.22f, -0.26f, 0.38f);
+    float scale = 1.2f;
+    glm::vec2 rot(-10.46f, 3.39f);
+
+    char weapon = 0;
+
+    window.addUI("offset", glm::vec2(500.0f, 300.0f), glm::vec2(0.0f, 150.0f), (bool*)1, ImGuiWindowFlags_None,
+        [&]() {
+            ImGui::DragFloat("x: ", &offset.x, 0.01f, -5.0f, 5.0f);
+            ImGui::DragFloat("y: ", &offset.y, 0.01f, -5.0f, 5.0f);
+            ImGui::DragFloat("z: ", &offset.z, 0.01f, -5.0f, 5.0f);
+
+            ImGui::DragFloat("scale: ", &scale, 0.01f, -3.0f, 3.0f);
+
+            ImGui::DragFloat("rot x: ", &rot.x, 0.01f, -30.0f, 30.0f);
+            ImGui::DragFloat("rot y: ", &rot.y, 0.01f, -30.0f, 30.0f);
+
         }
     );
 
@@ -73,7 +89,7 @@ int main() {
                     pause = !pause;
                     ifpress = true;
                 }
-            }            
+            }
 
             if (pause) {
                 window.setInputMode(GLFW_CURSOR, GLFW_CURSOR_NORMAL);
@@ -83,13 +99,30 @@ int main() {
             else {
                 window.setInputMode(GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                 player.update(window, shader);
+                window.renderUI(1);
+                //window.renderUI(2);
             }
 
+            weapon += window.getCursorCallBack().scrollY;
             // Draw with yaw offset (adjust the angle as needed - positive = rotate right, negative = rotate left)
-            awp.draw(shader.getProgram(), gl::getItemModelQuat(player.getCam(), WEAPON_OFFSET, 1.5f, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), glm::vec2(-20.0f, 15.0f)));
 
+            switch (weapon) {
+            case -1: {
+                awp.draw(shader.getProgram(), gl::getItemModelQuat(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
+                break;
+            }
+            case 0: {
+                M4A1.draw(shader.getProgram(), gl::getItemModelQuat(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
+                break;
+            }
+            case 1: {
+                usp.draw(shader.getProgram(), gl::getItemModelQuat(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
+                break;
+            }
+            }        
+            
             // Draw model in front of camera (adjust position as needed)
-            model.draw(shader.getProgram(), glm::vec3(0.0f, 0.0f, -5.0f), glm::vec3(1.0f), glm::vec3(0.0f));
+            model.draw(shader.getProgram(), glm::vec3(0.0f, 0.0f, -5.0f), glm::vec3(30.0f), glm::vec3(0.0f));
 
             window.imguiRender();
 
@@ -97,8 +130,7 @@ int main() {
         } catch (const std::exception& e) {
 			std::cout << e.what() << std::endl;
 		}
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(6));
+        if(window.getFps() > 60.0f) std::this_thread::sleep_for((std::chrono::milliseconds)5);
     }
 
     glfwTerminate();
