@@ -140,7 +140,7 @@ copy "$(SolutionDir)dependencies\assimp\bin\x64\assimp-vc143-mt.dll" "$(OutDir)"
       <LanguageStandard>stdcpp20</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <PrecompiledHeader>Create</PrecompiledHeader>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -475,7 +475,6 @@ copy "$(OutDir)openGL.exe" "C:\programming\openGL-engine\example";</Command>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dependencies\glm\detail\glm.cpp" />
-    <ClCompile Include="dependencies\glm\glm.cppm" />
     <ClCompile Include="dependencies\imgui\imgui.cpp" />
     <ClCompile Include="dependencies\imgui\imgui_demo.cpp" />
     <ClCompile Include="dependencies\imgui\imgui_draw.cpp" />
