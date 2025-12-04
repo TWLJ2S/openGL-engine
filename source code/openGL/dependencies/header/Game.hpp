@@ -34,7 +34,7 @@ namespace gl {
 		double thisX, thisY;
 
 		void processInput(gl::window& window) {
-			double sens = m_Camera.getFov() / 60 * m_Camera.getSens();
+			double sens = m_Camera.getFov() / 60.0f * m_Camera.getSens();
 
 			double lastX = thisX;
 			double lastY = thisY;
@@ -155,9 +155,9 @@ namespace gl {
 		player(gl::camera cam, gl::shader shader)
 			: m_Camera(cam), m_Velocity(glm::vec3(0.0f)), Yaw(0.0f), Pitch(0.0f), thisX(0.0f), thisY(0.0f)
 		{
-			m_Model = gl::uniform(glm::mat4(1.0f), shader.getUniformLocation("model"));
-			m_View = gl::uniform(glm::mat4(1.0f), shader.getUniformLocation("view"));
-			m_Proj = gl::uniform(glm::mat4(1.0f), shader.getUniformLocation("projection"));
+			m_Model = gl::uniform(glm::mat4(1.0f), shader.getUniformLoc("model"));
+			m_View = gl::uniform(glm::mat4(1.0f), shader.getUniformLoc("view"));
+			m_Proj = gl::uniform(glm::mat4(1.0f), shader.getUniformLoc("projection"));
 		}
 
 		player(gl::camera cam, GLuint modelLoc, GLuint viewLoc, GLuint projLoc)
@@ -168,7 +168,7 @@ namespace gl {
 			m_Proj = gl::uniform(glm::mat4(1.0f), projLoc);
 		}
 
-		void update(gl::window& window, gl::shader shader) {
+		void update(gl::window& window, gl::shader& shader) {
 			shader.useProgram();
 
 			// --- MOUSE LOOK ---
@@ -181,7 +181,7 @@ namespace gl {
 			m_View.uniformMatrix4fv();
 			m_Proj.uniformMatrix4fv();
 
-			GLint camPosLoc = glGetUniformLocation(shader.getProgram(), "camPos");
+			GLint camPosLoc = shader.getUniformLoc("camPos");
 			if (camPosLoc >= 0) {
 				glUniform3fv(camPosLoc, 1, glm::value_ptr(getPos()));
 			}

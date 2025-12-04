@@ -32,46 +32,6 @@ namespace gl {
 			GLfloat r, g, b, a;
 		};
 
-		struct UIWindow {
-			std::string name;
-			std::vector<std::function<void()>> elements;
-			glm::vec2 size{ 200.0f, 200.0f };
-			glm::vec2 pos{ 50.0f, 50.0f };
-			bool open{ true };
-			ImGuiWindowFlags flags{ ImGuiWindowFlags_None };
-
-			UIWindow() = default;
-
-			UIWindow(const std::string& n, const glm::vec2& s = { 200.0f,200.0f }, const glm::vec2& p = { 50.0f,50.0f },
-				bool o = true, ImGuiWindowFlags fs = ImGuiWindowFlags_None)
-				: name(n), size(s), pos(p), open(o), flags(fs) {
-			}
-
-			// Add a callable element. Accepts any callable convertible to std::function<void()>
-			void addElement(std::function<void()> f) {
-				if (f) elements.emplace_back(std::move(f));
-			}
-
-			// Replace an element at index. Safe-guarded by caller.
-			void setElement(size_t idx, std::function<void()> f) {
-				if (idx < elements.size()) elements[idx] = std::move(f);
-			}
-
-			// Render the stored UI. Must be called between ImGui::NewFrame() and ImGui::Render().
-			void render() {
-				ImGui::SetNextWindowSize(ImVec2(size.x, size.y), ImGuiCond_Always);
-				ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y), ImGuiCond_Always);
-
-				ImGui::Begin(name.c_str(), &open, flags);
-
-				for (auto& e : elements) {
-					e();
-				}
-
-				ImGui::End();
-			}
-		};
-
 		static void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
 			if (width <= 0 || height <= 0) return;
 
@@ -140,7 +100,7 @@ namespace gl {
 			ImGui_ImplGlfw_InitForOpenGL(m_WindowCallBack.window, true);
 			ImGui_ImplOpenGL3_Init("#version 330");
 
-			m_Imgui = &ImGui::GetIO();
+			m_WindowCallBack.imgui = &ImGui::GetIO();
 		}
 
 		struct keyCallBack{
@@ -167,6 +127,8 @@ namespace gl {
 			GLFWmonitor* monitor;
 			GLFWwindow* share;
 
+			ImGuiIO* imgui = nullptr;
+
 			int width;
 			int height;
 			std::string name;
@@ -178,15 +140,128 @@ namespace gl {
 			int vsync;
 		};
 
-	private:
-		GLuint m_Shader;
+		struct UIWindow {
+			std::string name;
+			std::function<void()> element;
+			glm::vec2 size{ 200.0f, 200.0f };
+			glm::vec2 pos{ 50.0f, 50.0f };
+			bool open{ true };
+			ImGuiWindowFlags flags{ ImGuiWindowFlags_None };
 
+			UIWindow() = default;
+
+			UIWindow(const std::string& n,
+				const glm::vec2& s = { 200.0f, 200.0f },
+				const glm::vec2& p = { 50.0f, 50.0f },
+				bool o = true,
+				ImGuiWindowFlags fs = ImGuiWindowFlags_None,
+				std::function<void()> f = nullptr
+			)
+				: name(n), size(s), pos(p), open(o), flags(fs), element(std::move(f))
+			{
+			}
+
+			// Set the UI element; only stores if f is valid
+			void setElement(std::function<void()> f) {
+				if (f) element = std::move(f);
+			}
+
+			// Render the window (between ImGui::NewFrame() and ImGui::Render())
+			void render() const {
+				ImGui::SetNextWindowSize(ImVec2(size.x, size.y), ImGuiCond_Always);
+				ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y), ImGuiCond_Always);
+
+				ImGui::Begin(name.c_str(), const_cast<bool*>(&open), flags);
+
+				if (element) element();
+
+				ImGui::End();
+			}
+		};
+
+		class UI {
+		private:
+			std::unordered_map<std::string, unsigned> iMap;
+			std::vector<UIWindow> ui;
+
+		public:
+			UI() = default;
+
+			// Get index safely
+			inline unsigned getUIIndex(const std::string& name) const {
+				auto it = iMap.find(name);
+				if (it == iMap.end()) throw std::runtime_error("UI not found: " + name);
+				return it->second;
+			}
+
+			// Get UIWindow by index
+			inline UIWindow& getUI(size_t index) { return ui.at(index); }
+			inline const UIWindow& getUI(size_t index) const { return ui.at(index); }
+
+			// Get UIWindow by name
+			inline UIWindow& getUI(const std::string& name) { return ui.at(getUIIndex(name)); }
+			inline const UIWindow& getUI(const std::string& name) const { return ui.at(getUIIndex(name)); }
+
+			// Render
+			inline void render(size_t index) const { ui.at(index).render(); }
+			inline void render(const std::string& name) const { ui.at(getUIIndex(name)).render(); }
+
+			// Set element function
+			inline void setUIElement(size_t index, std::function<void()> f) { ui.at(index).setElement(std::move(f)); }
+			inline void setUIElement(const std::string& name, std::function<void()> f) { ui.at(getUIIndex(name)).setElement(std::move(f)); }
+
+			// Add new UI window
+			inline void addUI(const std::string& n,
+				const glm::vec2& s = { 200.0f, 200.0f },
+				const glm::vec2& p = { 50.0f, 50.0f },
+				bool o = true,
+				ImGuiWindowFlags fs = ImGuiWindowFlags_None,
+				std::function<void()> f = nullptr)
+			{
+				if (iMap.find(n) != iMap.end())
+					throw std::runtime_error("UI name already exists: " + n);
+
+				ui.emplace_back(UIWindow(n, s, p, o, fs));
+				if (f) ui.back().setElement(std::move(f));
+
+				iMap[n] = static_cast<unsigned>(ui.size() - 1);
+			}
+
+			// Replace UIWindow by name
+			inline void setUI(const std::string& oldName,
+				const std::string& n,
+				const glm::vec2& s = { 200.0f, 200.0f },
+				const glm::vec2& p = { 50.0f, 50.0f },
+				bool o = true,
+				ImGuiWindowFlags fs = ImGuiWindowFlags_None,
+				std::function<void()> f = nullptr)
+			{
+				unsigned index = getUIIndex(oldName);
+				ui.at(index) = UIWindow(n, s, p, o, fs);
+				if (f) ui.at(index).setElement(std::move(f));
+				iMap.erase(oldName);
+				iMap[n] = index;
+			}
+
+			// Replace UIWindow by index
+			inline void setUI(size_t index,
+				const std::string& n,
+				const glm::vec2& s = { 200.0f, 200.0f },
+				const glm::vec2& p = { 50.0f, 50.0f },
+				bool o = true,
+				ImGuiWindowFlags fs = ImGuiWindowFlags_None,
+				std::function<void()> f = nullptr)
+			{
+				ui.at(index) = UIWindow(n, s, p, o, fs);
+				if (f) ui.at(index).setElement(std::move(f));
+			}
+		};
+
+	private:
 		windowCallBack m_WindowCallBack;
 		keyCallBack m_KeyCallBack;
 		cursorCallBack m_CursorCallBack;
-
-		std::vector<UIWindow> m_UI;
-		ImGuiIO* m_Imgui = nullptr;
+		UI m_UI;
 	public:	
 
 		window() = delete;
@@ -259,75 +334,11 @@ namespace gl {
 		void imguiRender() {
 			ImGui::Render();
 			ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+			ImGui::EndFrame();
 		}
 
-		template<typename Func = std::nullptr_t>
-		void addUI(const std::string& n,
-			const glm::vec2& s = { 200.f, 200.f },
-			const glm::vec2& p = { 50.f, 50.f },
-			bool open = true,
-			ImGuiWindowFlags fs = ImGuiWindowFlags_None,
-			Func func = Func{})
-		{
-			m_UI.emplace_back(UIWindow(n, s, p, open, fs));
-			if constexpr (!std::is_same_v<std::decay_t<Func>, std::nullptr_t>) {
-				m_UI.back().addElement(std::function<void()>(std::move(func)));
-			}
-		}
-
-		template<typename Func>
-		void addUIElement(unsigned i, Func&& func) {
-			m_UI[i].addElement(std::function<void()>(std::forward<Func>(func)));
-		}
-
-		void setUI(size_t index,
-			const std::string& n = "",
-			const glm::vec2& s = { 200.f, 200.f },
-			const glm::vec2& p = { 50.f, 50.f },
-			bool open = true,
-			ImGuiWindowFlags fs = ImGuiWindowFlags_None)
-		{
-			auto buffer = m_UI[index].elements;
-			m_UI[index] = UIWindow(n, s, p, open, fs);
-
-			for (auto& b : buffer)
-				m_UI[index].addElement(b);
-		}
-
-		template<typename Func>
-		void setUI(size_t index,
-			const std::string& n,
-			const glm::vec2& s = { 200.f, 200.f },
-			const glm::vec2& p = { 50.f, 50.f },
-			bool open = true,
-			ImGuiWindowFlags fs = ImGuiWindowFlags_None,
-			Func&& func = nullptr)
-		{
-			m_UI[index] = UIWindow(n, s, p, open, fs);
-			m_UI[index].addElement(std::function<void()>(std::forward<Func>(func)));
-		}
-
-		template<typename Func>
-		void setUIElement(size_t ui_index, size_t e_index, Func&& func) {
-			m_UI[ui_index].elements[e_index] = std::function<void()>(std::forward<Func>(func));
-		}
-
-		// Render a single UIWindow
-		void renderUI(unsigned i) {
-			m_UI[i].render();
-		}
-
-		void renderUI(unsigned start, unsigned end) {
-			for (unsigned i = start; i <= end; ++i) m_UI[i].render();
-		}
-
-		void deleteUI(size_t index) {
-			m_UI.erase(m_UI.begin() + index);
-		}
-
-		void deleteUI(unsigned start, unsigned end) {
-			m_UI.erase(m_UI.begin() + start, m_UI.begin() + end + 1);
-		}
+		gl::window::UI& getUI() { return m_UI; }
 
 		void setUIFont(const char* path, float size = 20.0f) {
 			ImGui::GetIO().Fonts->Clear();
@@ -361,8 +372,6 @@ namespace gl {
 		inline const int getHeight() const { return m_WindowCallBack.height; }
 
 		inline GLFWwindow* getWindow() const { return m_WindowCallBack.window; }
-
-		inline const GLuint getShader() const { return m_Shader; }
 
 		inline const float getTargetAspect() const { return m_WindowCallBack.targetAspect; }
 
@@ -442,42 +451,7 @@ namespace gl {
 		}
 
 		void swapBuffers() {
-			m_CursorCallBack.scrollX = 0.0f;
-			m_CursorCallBack.scrollY = 0.0f;
-
 			glfwSwapBuffers(m_WindowCallBack.window);
-		}
-
-		void linkShader(GLuint shaderProgram) {
-			m_Shader = shaderProgram;
-			glfwSetWindowUserPointer(m_WindowCallBack.window, this);
-		}
-
-		void drawArray(GLuint shaderProgram, GLuint VAO, GLenum mode, GLint first, GLsizei count) {
-			glUseProgram(shaderProgram);
-			glBindVertexArray(VAO);
-			glDrawArrays(mode, first, count);
-		}
-
-		void drawElements(GLuint shaderProgram, GLuint VAO, GLsizei count, const GLvoid* indices) {
-			glUseProgram(shaderProgram);
-			glBindVertexArray(VAO);
-			glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_INT, indices);
-		}
-
-		void drawElements(GLuint VAO, GLsizei count, const GLvoid* indices) {
-			glBindVertexArray(VAO);
-			glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_INT, indices);
-		}
-
-		void drawElementsWithTexture3D(GLuint VAO, GLsizei count, const GLvoid* indices, GLuint texture) {
-			glBindTexture(GL_TEXTURE_3D, texture);
-			glBindVertexArray(VAO);
-			glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_INT, indices);
-		}
-
-		void renderQuad(GLuint shaderProgram, GLuint VAO, GLenum mode, GLint first, GLsizei count) {
-			drawArray(shaderProgram, VAO, mode, first, count);
 		}
 
 		void vsync(int type) { 

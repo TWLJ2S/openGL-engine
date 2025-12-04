@@ -26,96 +26,6 @@
 
 namespace gl {
 
-    inline std::filesystem::path getShaderPath(const std::string& relativePath) {
-        std::filesystem::path exePath = std::filesystem::current_path();
-        return exePath / relativePath;
-    }
-
-    std::string getShader(const std::string& filename) {
-        std::ifstream file(getShaderPath(filename), std::ios::binary | std::ios::ate);
-        if (!file) {
-            throw std::runtime_error("Failed to open shader file: " + filename + '\n');
-        }
-
-        std::streamsize size = file.tellg();
-        file.seekg(0, std::ios::beg);
-
-        std::string buffer(size, '\0');
-        if (!file.read(buffer.data(), size)) {
-            throw std::runtime_error("Failed to read shader file: " + filename + '\n');
-        }
-
-        return buffer;
-    }
-
-    GLuint compileShader(const std::string& path, GLenum type) {
-        std::string sourceStr = gl::getShader(path);
-        const char* source = sourceStr.c_str();
-
-        GLuint shader = glCreateShader(type);
-        glShaderSource(shader, 1, &source, nullptr);
-        glCompileShader(shader);
-
-        GLint success;
-        glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-        if (!success) {
-            GLint logLength;
-            glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
-            std::string log(logLength, ' ');
-            glGetShaderInfoLog(shader, logLength, nullptr, log.data());
-            throw std::runtime_error("Shader compilation failed [" + path + "]: " + log + '\n');
-            glDeleteShader(shader);
-            return 0;
-        }
-        return shader;
-    }
-
-    void createProgram(GLuint& shaderProgram, GLuint vertexShader, GLuint fragmentShader) {
-        shaderProgram = glCreateProgram();
-        glAttachShader(shaderProgram, vertexShader);
-        glAttachShader(shaderProgram, fragmentShader);
-        glLinkProgram(shaderProgram);
-
-        GLint success;
-        glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
-        if (!success) {
-            GLint logLength;
-            glGetProgramiv(shaderProgram, GL_INFO_LOG_LENGTH, &logLength);
-            std::string log(logLength, ' ');
-            glGetProgramInfoLog(shaderProgram, logLength, nullptr, log.data());
-            throw std::runtime_error("Program linking failed: " + log + '\n');
-            glDeleteProgram(shaderProgram);
-            shaderProgram = 0;
-        }
-
-        glDeleteShader(vertexShader);
-        glDeleteShader(fragmentShader);
-    }
-
-    GLuint createProgram(GLuint vertexShader, GLuint fragmentShader) {
-        GLuint shaderProgram = glCreateProgram();
-        glAttachShader(shaderProgram, vertexShader);
-        glAttachShader(shaderProgram, fragmentShader);
-        glLinkProgram(shaderProgram);
-
-        GLint success;
-        glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
-        if (!success) {
-            GLint logLength;
-            glGetProgramiv(shaderProgram, GL_INFO_LOG_LENGTH, &logLength);
-            std::string log(logLength, ' ');
-            glGetProgramInfoLog(shaderProgram, logLength, nullptr, log.data());
-            throw std::runtime_error("Program linking failed: " + log + '\n');
-            glDeleteProgram(shaderProgram);
-            shaderProgram = 0;
-        }
-
-        glDeleteShader(vertexShader);
-        glDeleteShader(fragmentShader);
-
-        return shaderProgram;
-    }
-
     void terminate(GLuint VAO, GLuint VBO, GLuint shaderProgram) {
         glDeleteVertexArrays(1, &VAO);
         glDeleteBuffers(1, &VBO);
@@ -461,31 +371,182 @@ namespace gl {
 
     class shader {
     private:
-        GLuint m_VertexShader;
-        GLuint m_FragmentShader;
-        GLuint m_ShaderProgram;
+        struct UniformInfo {
+            std::unordered_map<std::string, GLint> sca;
+            std::unordered_map<std::string, GLint> arr; // base name -> location of [0]
+        };
 
-        friend void useProgram(const gl::shader& shader);
+        GLuint m_ShaderProgram;
+        UniformInfo m_Uniforms;
+
+        UniformInfo getShaderUniforms(GLuint program) {
+            UniformInfo uniforms;
+
+            GLint numUniforms = 0;
+            glGetProgramiv(program, GL_ACTIVE_UNIFORMS, &numUniforms);
+
+            GLint maxNameLength = 0;
+            glGetProgramiv(program, GL_ACTIVE_UNIFORM_MAX_LENGTH, &maxNameLength);
+            std::vector<char> nameBuffer(maxNameLength);
+
+            for (GLint i = 0; i < numUniforms; ++i) {
+                GLsizei length = 0;
+                GLint size = 0;
+                GLenum type = 0;
+
+                glGetActiveUniform(program, i, maxNameLength, &length, &size, &type, nameBuffer.data());
+                std::string name(nameBuffer.data(), length);
+
+                GLint location = glGetUniformLocation(program, name.c_str());
+                if (location < 0) continue;
+
+                // Detect if it is an array (usually ends with "[0]")
+                size_t bracket = name.find('[');
+                if (bracket == std::string::npos) {
+                    uniforms.sca[name] = location;
+                }
+                else {         
+                    std::string baseName = name.substr(0, bracket);
+                    if (!uniforms.arr.count(baseName))
+                        uniforms.arr[baseName] = location;
+                }
+            }
+
+            return uniforms;
+        }
+
+        inline std::filesystem::path getShaderPath(const std::string& relativePath) {
+            // Resolve absolute path relative to the executable's working directory
+            std::filesystem::path path = std::filesystem::current_path() / relativePath;
+
+            // Ensure file exists
+            if (!std::filesystem::exists(path)) {
+                throw std::runtime_error(
+                    "Shader file does not exist: " + path.string() +
+                    "\nWorking directory: " + std::filesystem::current_path().string()
+                );
+            }
+
+            return path;
+        }
+
+        // Read file contents in a binary-safe, fast way
+        std::string getShader(const std::string& filename) {
+            auto fullPath = getShaderPath(filename);
+
+            std::ifstream file(fullPath, std::ios::binary | std::ios::ate);
+            if (!file.is_open())
+                throw std::runtime_error("Failed to open shader file: " + fullPath.string());
+
+            std::streamsize size = file.tellg();
+            if (size <= 0)
+                throw std::runtime_error("Shader file is empty or unreadable: " + fullPath.string());
+
+            std::string buffer(size, '\0');
+
+            file.seekg(0, std::ios::beg);
+            if (!file.read(buffer.data(), size))
+                throw std::runtime_error("Failed to read shader file: " + fullPath.string());
+
+            return buffer;
+        }
+
+        GLuint compileShader(const std::string& filePath, GLenum type) {
+            // Load shader source from file
+            std::string source = getShader(filePath);
+            const char* src = source.c_str();
+
+            // Create shader object
+            GLuint shader = glCreateShader(type);
+            glShaderSource(shader, 1, &src, nullptr);
+            glCompileShader(shader);
+
+            // Check compilation
+            GLint success = 0;
+            glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+
+            if (!success) {
+                GLint logLength = 0;
+                glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
+
+                std::string log(logLength, '\0');
+                glGetShaderInfoLog(shader, logLength, nullptr, log.data());
+
+                glDeleteShader(shader); // avoid leaks
+
+                std::string typeName =
+                    (type == GL_VERTEX_SHADER) ? "VERTEX" :
+                    (type == GL_FRAGMENT_SHADER) ? "FRAGMENT" : "UNKNOWN";
+
+                throw std::runtime_error(
+                    "Compilation failed (" + typeName + "):\n" +
+                    "File: " + filePath + "\n" +
+                    log
+                );
+            }
+
+            return shader;
+        }
+
+        GLuint createProgram(const std::string& vertexShaderPath, const std::string& fragmentShaderPath) {
+            GLuint vertex = compileShader(vertexShaderPath, GL_VERTEX_SHADER);
+            GLuint fragment = compileShader(fragmentShaderPath, GL_FRAGMENT_SHADER);
+
+            GLuint program = glCreateProgram();
+            glAttachShader(program, vertex);
+            glAttachShader(program, fragment);
+            glLinkProgram(program);
+
+            // shaders can be deleted immediately after linking
+            glDeleteShader(vertex);
+            glDeleteShader(fragment);
+
+            GLint success = 0;
+            glGetProgramiv(program, GL_LINK_STATUS, &success);
+
+            if (!success) {
+                GLint logLength = 0;
+                glGetProgramiv(program, GL_INFO_LOG_LENGTH, &logLength);
+
+                std::string log(logLength, '\0');
+                glGetProgramInfoLog(program, logLength, nullptr, log.data());
+
+                glDeleteProgram(program);
+
+                throw std::runtime_error("Program linking failed:\n" + log);
+            }
+
+            return program;
+        }
+
     public:
         shader(const char* vertexShaderName, const char* fragmentShaderName) {
-            m_VertexShader = gl::compileShader(vertexShaderName, GL_VERTEX_SHADER);
-            m_FragmentShader = gl::compileShader(fragmentShaderName, GL_FRAGMENT_SHADER);
-            m_ShaderProgram = gl::createProgram(m_VertexShader, m_FragmentShader);
+            m_ShaderProgram = createProgram(vertexShaderName, fragmentShaderName);
+            m_Uniforms = getShaderUniforms(m_ShaderProgram);
         }
-        //vertexshader, fragmentshader
 
-        const GLuint getProgram() const { return m_ShaderProgram; }
+        void useProgram() const { glUseProgram(m_ShaderProgram); }
 
-        const void useProgram() { glUseProgram(m_ShaderProgram); }
+        GLuint getProgram() const { return m_ShaderProgram; }
 
-        const GLuint getUniformLocation(const char* name) const { return glGetUniformLocation(m_ShaderProgram, name); }
+        // Scalar uniform
+        GLint getUniformLoc(const std::string& name) const {
+            auto it = m_Uniforms.sca.find(name);
+            return (it != m_Uniforms.sca.end()) ? it->second : -1;
+        }
 
-        void setUniformMatrix4fv(const char* name, glm::mat4 data) { glUniformMatrix4fv(getUniformLocation(name), 1, GL_FALSE, glm::value_ptr(data)); }
+        // Array uniform
+        GLint getUniformLoc(const std::string& baseName, int index) const {
+            auto it = m_Uniforms.arr.find(baseName);
+            return (it != m_Uniforms.arr.end()) ? it->second + index : -1;
+        }
+
+        void setUniformMatrix4fv(const std::string& name, const glm::mat4& data) {
+            GLint loc = getUniformLoc(name);
+            if (loc >= 0)
+                glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(data));
+        }
     };
-
-    void useProgram(const gl::shader& shader) {
-        glUseProgram(shader.m_ShaderProgram);
-    }
 
     class camera {
     private:
@@ -499,25 +560,15 @@ namespace gl {
         glm::vec3 Right;
         glm::vec3 Up;
 
-        float Yaw;
-        float Pitch;
-
         float mouseSens;
 
         float Fov;
-
-        double lastY;
-        double lastX;
-
-        glm::vec3 speed;
-        glm::vec3 velocity;
     public:
 
         camera(const glm::vec3& position, const glm::vec3& target, const glm::vec3& upVector, const GLuint& shader)
             : m_Target(target), m_UpVector(upVector), m_Shader(shader),
-            Position(position), Front(glm::normalize(target - position)), Right(0.0f), Up(upVector),
-            velocity(glm::vec3(0.0f)), Yaw(0.0f), Pitch(0.0f), mouseSens(0.03f), Fov(60.0f),
-            lastY(0.0f), lastX(0.0f), speed(20.0f)
+            Position(position), Front(glm::normalize(target - position)), 
+            Right(0.0f), Up(upVector), mouseSens(0.03f), Fov(60.0f)
         {
         }
 
@@ -536,10 +587,6 @@ namespace gl {
         void setUpVector(const glm::vec3& upVector) { m_UpVector = upVector; }
 
         void setSens(const float& other) { mouseSens = other; }
-
-        const float getYaw() const { return Yaw; }
-
-        const float getPitch() const { return Pitch; }
 
         void setPos(const glm::vec3& other) { Position = other; }
 

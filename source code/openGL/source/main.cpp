@@ -4,15 +4,16 @@
 #include <Mesh.hpp>
 
 #include <iostream>
+#include <memory>
 #include <thread>
 #include <chrono>
 
 int main() {
     if (!glfwInit()) return -1;
     gl::window window(960, 540, "window");
-    glDisable(GL_CULL_FACE);
+    glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
-    glDisable(GL_BLEND);
+    glEnable(GL_BLEND);
     glEnable(GL_DEPTH_TEST);
 
     window.vsync(GL_DISABLE_VSYNC);    
@@ -23,10 +24,10 @@ int main() {
 
     shader.useProgram();
 
-    gl::object M4A1("resource/model/M4A1.glb");
-    gl::object awp("resource/model/awp.glb");
-    gl::object usp("resource/model/USPS.glb");
-    gl::object model("resource/model/model.glb");
+    gl::object M4A1("resource/model/M4A1.glb", &shader);
+    gl::object awp("resource/model/awp.glb", &shader);
+    gl::object usp("resource/model/USPS.glb", &shader);
+    gl::object model("resource/model/model.glb", &shader);
 
     // Add lights to objects so they can be rendered
     model.addLight(glm::vec3(5.0f, 5.0f, 5.0f), glm::vec3(1.0f, 1.0f, 1.0f));
@@ -37,19 +38,24 @@ int main() {
     bool ifpress = false;
     bool pause = true;
 
-    window.addUI("settings", glm::vec2(window.getWidth(), window.getHeight()), glm::vec2(0.0f), (bool*)1, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove, 
-        [&](){
+    window.getUI().addUI(
+        "settings",
+        glm::vec2(window.getWidth(), window.getHeight()),
+        glm::vec2(0.0f),
+        true, // open
+        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove,
+        [&]() {
             float aspect = (float)window.getWidth() / 4.0f;
-            ImVec2 size(4.0f / 10.0f * aspect, 3.0f / 10.0f * aspect);
+            ImVec2 size(0.4f * aspect, 0.3f * aspect);
             if (ImGui::Button("resume", size)) {
                 pause = false;
             }
         }
     );
 
-    window.addUI("fps counter", glm::vec2(200.0f, 150.0f), glm::vec2(0.0f), (bool*)1, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove,
+    window.getUI().addUI("fps counter", glm::vec2(200.0f, 150.0f), glm::vec2(0.0f), true, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove,
         [&]() {
-            ImGui::Text("%s", std::string("fps: " + std::to_string(window.getFps())).c_str());
+            ImGui::Text("fps: %.1f", window.getFps());
         }
     );
 
@@ -59,7 +65,7 @@ int main() {
 
     char weapon = 0;
 
-    window.addUI("offset", glm::vec2(500.0f, 300.0f), glm::vec2(0.0f, 150.0f), (bool*)1, ImGuiWindowFlags_None,
+    /*window.addUI("offset", glm::vec2(500.0f, 300.0f), glm::vec2(0.0f, 150.0f), (bool*)true, ImGuiWindowFlags_None,
         [&]() {
             ImGui::DragFloat("x: ", &offset.x, 0.01f, -5.0f, 5.0f);
             ImGui::DragFloat("y: ", &offset.y, 0.01f, -5.0f, 5.0f);
@@ -71,66 +77,64 @@ int main() {
             ImGui::DragFloat("rot y: ", &rot.y, 0.01f, -30.0f, 30.0f);
 
         }
-    );
+    );*/
 
     while (window.ifRun()) {
-        try {
-            window.clearColor(glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
-
-            window.imguiNewFrame();
-
-            if (ifpress) {
-                if (window.getKeyRelease(GLFW_KEY_ESCAPE)) {
-                    ifpress = false;
-                }
+        window.clearColor(glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
+  
+        window.imguiNewFrame();
+  
+        if (ifpress) {
+            if (window.getKeyRelease(GLFW_KEY_ESCAPE)) {
+                ifpress = false;
             }
-            else {
-                if (window.getKeyPress(GLFW_KEY_ESCAPE)) {
-                    pause = !pause;
-                    ifpress = true;
-                }
+        }
+        else {
+            if (window.getKeyPress(GLFW_KEY_ESCAPE)) {
+                pause = !pause;
+                ifpress = true;
             }
+        }
+  
+        if (pause) {
+            window.setInputMode(GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            window.getUI().getUI("settings").size = glm::vec2(window.getWidth(), window.getHeight());
+            window.getUI().render("settings");
+        }
+        else {
+            window.setInputMode(GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            player.update(window, shader);
+            window.getUI().render("fps counter");
+        }
+  
+        weapon += window.getCursorCallBack().scrollY;
+  
+        switch (weapon) {
+        case -1: {
+            awp.draw(gl::getItemModelQuat(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
+            break;
+        }
+        case 0: {
+            M4A1.draw(gl::getItemModelQuat(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
+            break;
+        }
+        case 1: {
+            usp.draw(gl::getItemModelQuat(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
+            break;
+        }
+        }        
+        
+        // Draw model in front of camera (adjust position as needed)
+        model.draw(glm::vec3(0.0f, 0.0f, -5.0f), glm::vec3(30.0f), glm::vec3(0.0f));
+  
+        window.imguiRender();
+  
+        window.swapBuffers();
+  
+        window.setScrollX(0.0f);
+        window.setScrollY(0.0f);
 
-            if (pause) {
-                window.setInputMode(GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-                window.setUI(0, "settings", glm::vec2(window.getWidth(), window.getHeight()), glm::vec2(0.0f), 0, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
-                window.renderUI(0);
-            }
-            else {
-                window.setInputMode(GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-                player.update(window, shader);
-                window.renderUI(1);
-                //window.renderUI(2);
-            }
-
-            weapon += window.getCursorCallBack().scrollY;
-            // Draw with yaw offset (adjust the angle as needed - positive = rotate right, negative = rotate left)
-
-            switch (weapon) {
-            case -1: {
-                awp.draw(shader.getProgram(), gl::getItemModelQuat(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
-                break;
-            }
-            case 0: {
-                M4A1.draw(shader.getProgram(), gl::getItemModelQuat(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
-                break;
-            }
-            case 1: {
-                usp.draw(shader.getProgram(), gl::getItemModelQuat(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
-                break;
-            }
-            }        
-            
-            // Draw model in front of camera (adjust position as needed)
-            model.draw(shader.getProgram(), glm::vec3(0.0f, 0.0f, -5.0f), glm::vec3(30.0f), glm::vec3(0.0f));
-
-            window.imguiRender();
-
-            window.swapBuffers();
-        } catch (const std::exception& e) {
-			std::cout << e.what() << std::endl;
-		}
-        if(window.getFps() > 60.0f) std::this_thread::sleep_for((std::chrono::milliseconds)5);
+        std::this_thread::sleep_for((std::chrono::milliseconds)1);
     }
 
     glfwTerminate();
