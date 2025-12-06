@@ -134,9 +134,7 @@ namespace gl {
 			std::string name;
 			bool ifinit;
 			double targetAspect;
-			float deltaTime;
-			float currentFrame;
-			float lastFrame;
+			double deltaTime;
 			int vsync;
 		};
 
@@ -275,8 +273,6 @@ namespace gl {
 			m_WindowCallBack.name = name;
 			m_WindowCallBack.targetAspect = (float)width / (float)height;
 			m_WindowCallBack.deltaTime = glfwGetTime();
-			m_WindowCallBack.currentFrame = 0.0f;
-			m_WindowCallBack.lastFrame = 0.0f;
 			m_WindowCallBack.vsync = 0;
 
 			m_CursorCallBack.x = 0.0f;
@@ -318,11 +314,13 @@ namespace gl {
 			glfwMakeContextCurrent(m_WindowCallBack.window);
 			glfwPollEvents();
 
-			m_WindowCallBack.currentFrame = (float)glfwGetTime();
-			m_WindowCallBack.deltaTime = m_WindowCallBack.currentFrame - m_WindowCallBack.lastFrame;
-			m_WindowCallBack.lastFrame = m_WindowCallBack.currentFrame;
+			static double lastFrame = 0.0;
+			double currentFrame = glfwGetTime();
+			m_WindowCallBack.deltaTime = currentFrame - lastFrame;
+			lastFrame = currentFrame;
 
-			return !(glfwGetKey(m_WindowCallBack.window, GLFW_KEY_HOME) == GLFW_PRESS || glfwWindowShouldClose(m_WindowCallBack.window));
+			return !(glfwGetKey(m_WindowCallBack.window, GLFW_KEY_HOME) == GLFW_PRESS
+				|| glfwWindowShouldClose(m_WindowCallBack.window));
 		}
 
 		void imguiNewFrame() {

@@ -26,39 +26,29 @@ namespace gl {
 	private:
 		gl::camera m_Camera;
 		glm::vec3 m_Velocity;
-		gl::uniform m_Model;
-		gl::uniform m_View;
-		gl::uniform m_Proj;
+		std::shared_ptr<gl::shader> m_Shader;
+		std::shared_ptr<gl::window> m_Window;
+		glm::mat4 m_Model;
+		glm::mat4 m_View;
+		glm::mat4 m_Proj;
 
-		float Yaw, Pitch;
+		double Yaw, Pitch;
 		double thisX, thisY;
 
-		void processInput(gl::window& window) {
+		void processInput() {
 			double sens = m_Camera.getFov() / 60.0f * m_Camera.getSens();
 
 			double lastX = thisX;
 			double lastY = thisY;
 
-			thisX = window.getCursorX();
-			thisY = window.getCursorY();
-
-			// Skip first frame to avoid huge delta from initialization
-
-			double deltaX = lastX - thisX;
-			double deltaY = lastY - thisY;
-
-			// Limit delta to prevent huge jumps (e.g., from window focus changes)
-			deltaX = glm::clamp(deltaX, (double)-100.0f, (double)100.0f);
-			deltaY = glm::clamp(deltaY, (double)-100.0f, (double)100.0f);
-
-			Yaw += sens * -deltaX;
-			Pitch += sens * deltaY;
+			thisX = m_Window->getCursorX();
+			thisY = m_Window->getCursorY();
 
 			// Clamp Pitch to prevent gimbal lock (must be applied immediately)
-			Pitch = glm::clamp(Pitch, -89.99f, 89.99f);
+			Pitch = glm::clamp(Pitch + (double)(sens * (lastY - thisY)), (double)-89.0f, (double)89.0f);
 			
 			// Wrap Yaw to keep it in [-180, 180) range
-			Yaw = std::fmod(Yaw + 180.0f, 360.0f) - 180.0f;
+			Yaw = std::fmod(Yaw + (double)(sens * -(lastX - thisX)) + (double)180.0f, (double)360.0f) - (double)180.0f;
 
 			//std::cout << "X: " << Yaw << "\nY: " << Pitch << std::endl;
 
@@ -67,11 +57,11 @@ namespace gl {
 			static bool ifpress = false;
 			static unsigned char zoom = 0;
 			static float fov = 60.0f;
-			if (window.getCursorCallBack().button == GLFW_MOUSE_BUTTON_RIGHT) {
+			if (m_Window->getCursorCallBack().button == GLFW_MOUSE_BUTTON_RIGHT) {
 				if (ifpress) {
-					if (window.getCursorAction() == GLFW_RELEASE) ifpress = false;
+					if (m_Window->getCursorAction() == GLFW_RELEASE) ifpress = false;
 				}
-				else if (window.getCursorAction() == GLFW_PRESS) {
+				else if (m_Window->getCursorAction() == GLFW_PRESS) {
 					ifpress = true;
 
 					zoom = (zoom + 1) % 3;
@@ -103,7 +93,7 @@ namespace gl {
 			}
 
 			// update the projection matrix
-			if (fov != getFov()) setFov(glm::mix(getFov(), fov, 15.0f * window.getDeltaTime()), (float)window.getWidth() / (float)window.getHeight());
+			if (fov != m_Camera.getFov()) setFov(glm::mix(m_Camera.getFov(), fov, 15.0f * m_Window->getDeltaTime()), (float)m_Window->getWidth() / (float)m_Window->getHeight());
 
 			// --- UPDATE FRONT VECTOR ---
 			glm::vec3 front;
@@ -123,68 +113,37 @@ namespace gl {
 
 			glm::vec3 right = glm::normalize(glm::cross(Front, m_Camera.getUpVector()));
 
-			float friction = 0.85f; // Friction coefficient
-
 			// Use getKeyPress() to check if keys are currently held (not just callback events)
 			// This allows continuous movement while keys are held down
-			if (window.getKeyPress(GLFW_KEY_W)) m_Velocity += forward;
-			if (window.getKeyPress(GLFW_KEY_S)) m_Velocity -= forward;
-			if (window.getKeyPress(GLFW_KEY_A)) m_Velocity -= right;
-			if (window.getKeyPress(GLFW_KEY_D)) m_Velocity += right;
-			if (window.getKeyPress(GLFW_KEY_SPACE)) m_Velocity += m_Camera.getUpVector();
-			if (window.getKeyPress(GLFW_KEY_LEFT_SHIFT)) m_Velocity -= m_Camera.getUpVector();
-			if (window.getKeyPress(GLFW_KEY_C)) friction = 0.6f;
-			
-			// Apply friction to slow down velocity
-			m_Velocity *= friction;
+			if (m_Window->getKeyPress(GLFW_KEY_W)) m_Velocity += forward;
+			if (m_Window->getKeyPress(GLFW_KEY_S)) m_Velocity -= forward;
+			if (m_Window->getKeyPress(GLFW_KEY_A)) m_Velocity -= right;
+			if (m_Window->getKeyPress(GLFW_KEY_D)) m_Velocity += right;
+			if (m_Window->getKeyPress(GLFW_KEY_SPACE)) m_Velocity += m_Camera.getUpVector();
+			if (m_Window->getKeyPress(GLFW_KEY_LEFT_SHIFT)) m_Velocity -= m_Camera.getUpVector();
+			m_Velocity *= m_Window->getKeyPress(GLFW_KEY_C) ? 0.7f : 0.9f;
 
-			m_Camera.setPos(m_Camera.getPos() + (m_Velocity * window.getDeltaTime()));
-
-			//std::cout << "X: " << m_Camera.getPos().x << "\nY: " << m_Camera.getPos().y << "\nZ: " << m_Camera.getPos().z << std::endl;
+			m_Camera.setPos(m_Camera.getPos() + m_Velocity * m_Window->getDeltaTime());
 		}
 
 	public:
-		player(gl::camera cam) 
-			: m_Camera(cam), m_Velocity(glm::vec3(0.0f)), Yaw(0.0f), Pitch(0.0f), thisX(0.0f), thisY(0.0f)
+		player(const gl::camera& cam, const std::shared_ptr<gl::window>& window, const std::shared_ptr<gl::shader>& shader)
+			: m_Camera(cam), m_Velocity(glm::vec3(0.0f)), m_Window(window), m_Shader(shader), m_Model(glm::mat4(1.0f)), m_View(glm::mat4(1.0f)), m_Proj(glm::mat4(1.0f))
 		{
-			m_Model = gl::uniform(glm::mat4(1.0f), glGetUniformLocation(m_Camera.getShader(), "model"));
-			m_View = gl::uniform(glm::mat4(1.0f), glGetUniformLocation(m_Camera.getShader(), "view"));
-			m_Proj = gl::uniform(glm::mat4(1.0f), glGetUniformLocation(m_Camera.getShader(), "projection"));
 		}
 
-		player(gl::camera cam, gl::shader shader)
-			: m_Camera(cam), m_Velocity(glm::vec3(0.0f)), Yaw(0.0f), Pitch(0.0f), thisX(0.0f), thisY(0.0f)
-		{
-			m_Model = gl::uniform(glm::mat4(1.0f), shader.getUniformLoc("model"));
-			m_View = gl::uniform(glm::mat4(1.0f), shader.getUniformLoc("view"));
-			m_Proj = gl::uniform(glm::mat4(1.0f), shader.getUniformLoc("projection"));
-		}
-
-		player(gl::camera cam, GLuint modelLoc, GLuint viewLoc, GLuint projLoc)
-			: m_Camera(cam), m_Velocity(glm::vec3(0.0f)), Yaw(0.0f), Pitch(0.0f), thisX(0.0f), thisY(0.0f)
-		{
-			m_Model = gl::uniform(glm::mat4(1.0f), modelLoc);
-			m_View = gl::uniform(glm::mat4(1.0f), viewLoc);
-			m_Proj = gl::uniform(glm::mat4(1.0f), projLoc);
-		}
-
-		void update(gl::window& window, gl::shader& shader) {
-			shader.useProgram();
+		void update() {
+			m_Shader->useProgram();
 
 			// --- MOUSE LOOK ---
-			processInput(window);
+			processInput();
 
-			m_View = m_Camera.getViewMatrix();
-			m_Proj = glm::infinitePerspective(glm::radians(m_Camera.getFov()), (float)window.getWidth() / (float)window.getHeight(), 0.1f);
+			m_Proj = glm::infinitePerspective(glm::radians(m_Camera.getFov()), (float)m_Window->getWidth() / (float)m_Window->getHeight(), 0.1f);
 
-			m_Model.uniformMatrix4fv();
-			m_View.uniformMatrix4fv();
-			m_Proj.uniformMatrix4fv();
-
-			GLint camPosLoc = shader.getUniformLoc("camPos");
-			if (camPosLoc >= 0) {
-				glUniform3fv(camPosLoc, 1, glm::value_ptr(getPos()));
-			}
+			m_Shader->setUniformMat4fv("model", m_Model);
+			m_Shader->setUniformMat4fv("view", m_Camera.getViewMatrix());
+			m_Shader->setUniformMat4fv("projection", m_Proj);
+			m_Shader->setUniform3fv("camPos", getPos());
 		}
 
 		void setFov(const float& fov, const float& aspect) { m_Camera.setFov(fov); }
@@ -199,7 +158,7 @@ namespace gl {
 
 		void setProj(glm::mat4& other) { m_Proj = other; }
 
-		glm::mat4 getProj() const { return m_Proj.getValue(); }
+		glm::mat4 getProj() const { return m_Proj; }
 
 		gl::camera getCam() { return m_Camera; }
 
@@ -208,7 +167,7 @@ namespace gl {
 		glm::vec3 getDirRadians() const { return m_Camera.getFront(); }
 	};
 
-	glm::mat4 getItemModelMat4(const camera& cam, const glm::vec3& offset, const glm::vec3& scale) {
+	glm::mat4 getItemModel(const camera& cam, const glm::vec3& offset, const glm::vec3& scale) {
 		return glm::scale(
 			glm::translate(
 				glm::translate(glm::mat4(1.0f), cam.getPos()) *
@@ -219,7 +178,7 @@ namespace gl {
 		);
 	}
 
-	glm::mat4 getItemModelQuat(
+	glm::mat4 getItemModel(
 		const gl::camera& cam,
 		const glm::vec3& offset,
 		const float& scale,

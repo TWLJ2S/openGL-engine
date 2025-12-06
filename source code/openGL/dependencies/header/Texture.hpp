@@ -15,24 +15,36 @@ namespace gl {
         texture2D(const std::string& path) {
             stbi_set_flip_vertically_on_load(true);
             m_Data = stbi_load(path.c_str(), &m_Width, &m_Height, &m_NrChannels, 0);
-            if (!m_Data) {
-                throw std::runtime_error("Failed to load texture: " + path + "\n");
-                return;
-            }
+
+            if (!m_Data)
+                throw std::runtime_error("Failed to load texture: " + path);
 
             glGenTextures(1, &m_Texture);
             glBindTexture(GL_TEXTURE_2D, m_Texture);
 
-            GLenum format = m_NrChannels == 3 ? GL_RGB : GL_RGBA;
+            GLenum format;
+            if (m_NrChannels == 1) format = GL_RED;
+            else if (m_NrChannels == 3) format = GL_RGB;
+            else format = GL_RGBA;
+
             glTexImage2D(GL_TEXTURE_2D, 0, format, m_Width, m_Height, 0, format, GL_UNSIGNED_BYTE, m_Data);
             glGenerateMipmap(GL_TEXTURE_2D);
 
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR); // Trilinear filtering
+            // Wrapping rules ¨C GL_RED cannot safely use GL_REPEAT on some GPUs
+            if (format == GL_RED) {
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            }
+            else {
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+            }
+
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-            if (glewIsSupported("GL_EXT_texture_filter_anisotropic")) {
+            // Anisotropy ¡ª only if supported and not a single-channel texture
+            if (m_NrChannels > 1 && glewIsSupported("GL_EXT_texture_filter_anisotropic")) {
                 GLfloat maxAniso = 0.0f;
                 glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAniso);
                 glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, maxAniso);
@@ -42,22 +54,30 @@ namespace gl {
         }
 
         texture2D(unsigned char* data, int width, int height, int channels) {
-            if (!data) throw std::runtime_error("Texture data is null");
-
-            stbi_set_flip_vertically_on_load(true);
+            if (!data)
+                throw std::runtime_error("Texture data is null");
 
             glGenTextures(1, &m_Texture);
             glBindTexture(GL_TEXTURE_2D, m_Texture);
 
-            GLenum format = GL_RGBA;
-            if (channels == 3) format = GL_RGB;
-            else if (channels == 1) format = GL_RED;
+            GLenum format;
+            if (channels == 1) format = GL_RED;
+            else if (channels == 3) format = GL_RGB;
+            else format = GL_RGBA;
 
             glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
             glGenerateMipmap(GL_TEXTURE_2D);
 
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+            // Wrapping rules ¡ª GL_RED must clamp to avoid GL_INVALID_ENUM
+            if (format == GL_RED) {
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            }
+            else {
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+            }
+
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         }

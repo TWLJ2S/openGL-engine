@@ -112,8 +112,8 @@ namespace gl {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         }
 
-        void bind(GLenum textureUnit = GL_TEXTURE0) const {
-            glActiveTexture(textureUnit);
+        void bind(GLenum unit) const {
+            glActiveTexture(GL_TEXTURE0 + unit);
             glBindTexture(GL_TEXTURE_2D, m_Texture);
         }
 
@@ -378,6 +378,7 @@ namespace gl {
 
         GLuint m_ShaderProgram;
         UniformInfo m_Uniforms;
+        GLint m_MaxTexUnits;
 
         UniformInfo getShaderUniforms(GLuint program) {
             UniformInfo uniforms;
@@ -405,7 +406,7 @@ namespace gl {
                 if (bracket == std::string::npos) {
                     uniforms.sca[name] = location;
                 }
-                else {         
+                else {
                     std::string baseName = name.substr(0, bracket);
                     if (!uniforms.arr.count(baseName))
                         uniforms.arr[baseName] = location;
@@ -523,11 +524,14 @@ namespace gl {
         shader(const char* vertexShaderName, const char* fragmentShaderName) {
             m_ShaderProgram = createProgram(vertexShaderName, fragmentShaderName);
             m_Uniforms = getShaderUniforms(m_ShaderProgram);
+            glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &m_MaxTexUnits);
         }
 
         void useProgram() const { glUseProgram(m_ShaderProgram); }
 
         GLuint getProgram() const { return m_ShaderProgram; }
+
+        const GLint getMaxTextureUnits() const { return m_MaxTexUnits; }
 
         // Scalar uniform
         GLint getUniformLoc(const std::string& name) const {
@@ -541,10 +545,17 @@ namespace gl {
             return (it != m_Uniforms.arr.end()) ? it->second + index : -1;
         }
 
-        void setUniformMatrix4fv(const std::string& name, const glm::mat4& data) {
+        void setUniformMat4fv(const std::string& name, const glm::mat4& data) {
             GLint loc = getUniformLoc(name);
             if (loc >= 0)
                 glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(data));
+        }
+
+        void setUniform3fv(const std::string& name, const glm::vec3& data) {
+            GLint loc = getUniformLoc(name);
+            if (loc >= 0) {
+                glUniform3fv(loc, 1, glm::value_ptr(data));
+            }
         }
     };
 
@@ -552,8 +563,6 @@ namespace gl {
     private:
         glm::vec3 m_Target;
         glm::vec3 m_UpVector;
-
-        GLuint m_Shader;
 
         glm::vec3 Position;
         glm::vec3 Front;
@@ -565,14 +574,12 @@ namespace gl {
         float Fov;
     public:
 
-        camera(const glm::vec3& position, const glm::vec3& target, const glm::vec3& upVector, const GLuint& shader)
-            : m_Target(target), m_UpVector(upVector), m_Shader(shader),
-            Position(position), Front(glm::normalize(target - position)), 
-            Right(0.0f), Up(upVector), mouseSens(0.03f), Fov(60.0f)
+        camera(const glm::vec3& position, const glm::vec3& target, const glm::vec3& upVector)
+            : m_Target(target), m_UpVector(upVector), Position(position), 
+            Front(glm::normalize(target - position)), Right(0.0f), 
+            Up(upVector), mouseSens(0.03f), Fov(60.0f)
         {
         }
-
-        const GLuint getShader() const { return m_Shader; }
 
         const float getFov() const { return Fov; }
 

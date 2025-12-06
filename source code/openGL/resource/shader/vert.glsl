@@ -17,7 +17,7 @@ void main()
 {
     // World-space fragment position
     FragPos = vec3(model * vec4(aPos, 1.0));
-    gl_Position = projection * view * vec4(FragPos, 1.0);
+    gl_Position = projection * view * model * vec4(aPos, 1.0);
 
     // Build TBN matrix for tangent-space normal mapping
     mat3 normalMatrix = mat3(transpose(inverse(model)));

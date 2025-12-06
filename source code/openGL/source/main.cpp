@@ -8,44 +8,51 @@
 #include <thread>
 #include <chrono>
 
+//void GLAPIENTRY glDebugCallback(GLenum source, GLenum type, GLuint id,
+//    GLenum severity, GLsizei length,
+//    const GLchar* message, const void* userParam)
+//{
+//    std::cout << "[GL ERROR] " << message << " (type=" << type
+//        << ", id=" << id << ", severity=" << severity << ")\n";
+//}
+
 int main() {
     if (!glfwInit()) return -1;
-    gl::window window(960, 540, "window");
+    auto window = std::make_shared<gl::window>(960, 540, "window");
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
-    glEnable(GL_BLEND);
+    glDisable(GL_BLEND);
     glEnable(GL_DEPTH_TEST);
-
-    window.vsync(GL_DISABLE_VSYNC);    
 
     if (glewInit() != GLEW_OK) return -1;
 
-    gl::shader shader("resource/shader/vert.glsl", "resource/shader/frag.glsl");
+    auto shader = std::make_shared<gl::shader>("resource/shader/vert.glsl", "resource/shader/frag.glsl");
 
-    shader.useProgram();
+    shader->useProgram();
 
-    gl::object M4A1("resource/model/M4A1.glb", &shader);
-    gl::object awp("resource/model/awp.glb", &shader);
-    gl::object usp("resource/model/USPS.glb", &shader);
-    gl::object model("resource/model/model.glb", &shader);
+    gl::object M4A1("resource/model/M4A1.glb", shader);
+    gl::object awp("resource/model/awp.glb", shader);
+    gl::object usp("resource/model/USPS.glb", shader);
+    gl::object model("resource/model/model.glb", shader);
 
     // Add lights to objects so they can be rendered
     model.addLight(glm::vec3(5.0f, 5.0f, 5.0f), glm::vec3(1.0f, 1.0f, 1.0f));
     model.addLight(glm::vec3(-5.0f, 5.0f, -5.0f), glm::vec3(0.5f, 0.5f, 0.8f));
 
-    gl::player player(gl::camera(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), shader.getProgram()));
+    gl::player player(gl::camera(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)), 
+        window, shader);
 
     bool ifpress = false;
     bool pause = true;
 
-    window.getUI().addUI(
+    window->getUI().addUI(
         "settings",
-        glm::vec2(window.getWidth(), window.getHeight()),
+        glm::vec2(window->getWidth(), window->getHeight()),
         glm::vec2(0.0f),
         true, // open
         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove,
         [&]() {
-            float aspect = (float)window.getWidth() / 4.0f;
+            float aspect = (float)window->getWidth() / 4.0f;
             ImVec2 size(0.4f * aspect, 0.3f * aspect);
             if (ImGui::Button("resume", size)) {
                 pause = false;
@@ -53,9 +60,9 @@ int main() {
         }
     );
 
-    window.getUI().addUI("fps counter", glm::vec2(200.0f, 150.0f), glm::vec2(0.0f), true, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove,
+    window->getUI().addUI("fps counter", glm::vec2(200.0f, 150.0f), glm::vec2(0.0f), true, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove,
         [&]() {
-            ImGui::Text("fps: %.1f", window.getFps());
+            ImGui::Text("fps: %.3f", window->getFps());
         }
     );
 
@@ -79,60 +86,77 @@ int main() {
         }
     );*/
 
-    while (window.ifRun()) {
-        window.clearColor(glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
+    const glm::mat4 modelMat(
+        30.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 30.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 30.0f, 0.0f,
+        0.0f, 0.0f, -5.0f, 1.0f
+    );
+
+    while (window->ifRun()) {
+        window->clearColor(glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
   
-        window.imguiNewFrame();
+        window->imguiNewFrame();
   
         if (ifpress) {
-            if (window.getKeyRelease(GLFW_KEY_ESCAPE)) {
+            if (window->getKeyRelease(GLFW_KEY_ESCAPE)) {
                 ifpress = false;
             }
         }
         else {
-            if (window.getKeyPress(GLFW_KEY_ESCAPE)) {
+            if (window->getKeyPress(GLFW_KEY_ESCAPE)) {
                 pause = !pause;
                 ifpress = true;
             }
         }
   
         if (pause) {
-            window.setInputMode(GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-            window.getUI().getUI("settings").size = glm::vec2(window.getWidth(), window.getHeight());
-            window.getUI().render("settings");
+            window->setInputMode(GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            window->getUI().getUI("settings").size = glm::vec2(window->getWidth(), window->getHeight());
+            window->getUI().render("settings");
         }
         else {
-            window.setInputMode(GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-            player.update(window, shader);
-            window.getUI().render("fps counter");
+            window->getUI().render("fps counter");
+            window->setInputMode(GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            player.update();
         }
   
-        weapon += window.getCursorCallBack().scrollY;
+        weapon += window->getCursorCallBack().scrollY;
   
         switch (weapon) {
+        case -2:
+            weapon = 1;
         case -1: {
-            awp.draw(gl::getItemModelQuat(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
+            awp.draw(gl::getItemModel(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
             break;
         }
         case 0: {
-            M4A1.draw(gl::getItemModelQuat(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
+            M4A1.draw(gl::getItemModel(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
             break;
         }
         case 1: {
-            usp.draw(gl::getItemModelQuat(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
+            usp.draw(gl::getItemModel(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
             break;
         }
+        case 2:
+            weapon = -1;
         }        
         
         // Draw model in front of camera (adjust position as needed)
-        model.draw(glm::vec3(0.0f, 0.0f, -5.0f), glm::vec3(30.0f), glm::vec3(0.0f));
+        model.draw(modelMat);
   
-        window.imguiRender();
+        window->imguiRender();
   
-        window.swapBuffers();
-  
-        window.setScrollX(0.0f);
-        window.setScrollY(0.0f);
+        window->setScrollX(0.0f);
+        window->setScrollY(0.0f);
+
+        window->swapBuffers();
+
+        /*while (true) {
+            GLenum err = glGetError();
+            if (err == GL_NO_ERROR) break;
+            else std::cout << "opengl error: " << err << std::endl;
+        }*/
 
         std::this_thread::sleep_for((std::chrono::milliseconds)1);
     }
