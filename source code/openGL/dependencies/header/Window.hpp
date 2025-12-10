@@ -141,10 +141,21 @@ namespace gl {
 		struct UIWindow {
 			std::string name;
 			std::function<void()> element;
-			glm::vec2 size{ 200.0f, 200.0f };
-			glm::vec2 pos{ 50.0f, 50.0f };
-			bool open{ true };
-			ImGuiWindowFlags flags{ ImGuiWindowFlags_None };
+			glm::vec2 size;
+			glm::vec2 pos;
+			bool open;
+			ImGuiWindowFlags flags;
+
+			std::vector<std::unique_ptr<UIWindow>> children;
+			UIWindow* parent;
+			std::unordered_map<std::string, unsigned> childMap;
+			bool renderIsSuppressed = false;
+
+			UIWindow(const UIWindow&) = delete;            // no copy
+			UIWindow& operator=(const UIWindow&) = delete; // no copy assignment
+
+			UIWindow(UIWindow&&) noexcept = default;       // allow move
+			UIWindow& operator=(UIWindow&&) noexcept = default; // allow move assignment
 
 			UIWindow() = default;
 
@@ -153,28 +164,75 @@ namespace gl {
 				const glm::vec2& p = { 50.0f, 50.0f },
 				bool o = true,
 				ImGuiWindowFlags fs = ImGuiWindowFlags_None,
-				std::function<void()> f = nullptr
+				std::function<void()> f = nullptr,
+				UIWindow* pa = nullptr
 			)
-				: name(n), size(s), pos(p), open(o), flags(fs), element(std::move(f))
+				: name(n), size(s), pos(p), open(o), flags(fs), element(std::move(f)), parent(pa)
 			{
 			}
 
-			// Set the UI element; only stores if f is valid
-			void setElement(std::function<void()> f) {
-				if (f) element = std::move(f);
+			std::function<void()> getEffectiveElement() const {
+				const UIWindow* cur = this;
+				while (cur) {
+					if (cur->element) return cur->element;
+					cur = cur->parent;
+				}
+				return nullptr; // returns empty std::function, safe
 			}
 
-			// Render the window (between ImGui::NewFrame() and ImGui::Render())
+			// --------------------------------
+			// Add child window
+			// --------------------------------
+			inline void addChild(const std::string& childName,
+				const glm::vec2& s = { 200.0f, 200.0f },
+				const glm::vec2& p = { 50.0f, 50.0f },
+				bool o = true,
+				ImGuiWindowFlags fs = ImGuiWindowFlags_None,
+				std::function<void()> f = nullptr)
+			{
+				// Explicitly construct UIWindow with `new` instead of std::make_unique
+				auto child = std::unique_ptr<UIWindow>(new UIWindow(childName, s, p, o, fs, std::move(f), this));
+				children.push_back(std::move(child));
+				childMap.emplace(childName, static_cast<unsigned>(childMap.size()));
+			}
+
+			UIWindow* getChild(const std::string& name) const {
+				auto it = childMap.find(name);
+				if (it == childMap.end()) return nullptr;
+				return children[it->second].get();
+			}
+
+			void suppressParentRender(bool other) { if (parent) parent->renderIsSuppressed = other; }
+
+			// --------------------------------
+			// Render this window
+			// --------------------------------
 			void render() const {
+				if (renderIsSuppressed) return;
+
+				// Temporarily suppress parent
+				bool oldParentSuppress = false;
+				if (parent) {
+					oldParentSuppress = parent->renderIsSuppressed;
+					parent->renderIsSuppressed = true;
+				}
+
 				ImGui::SetNextWindowSize(ImVec2(size.x, size.y), ImGuiCond_Always);
 				ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y), ImGuiCond_Always);
 
 				ImGui::Begin(name.c_str(), const_cast<bool*>(&open), flags);
 
-				if (element) element();
+				if (auto el = getEffectiveElement()) el();
 
 				ImGui::End();
+
+				// Restore parent suppression
+				if (parent) parent->renderIsSuppressed = oldParentSuppress;
 			}
+
+			// Set the UI element; only stores if f is valid
+			void setElement(std::function<void()> f) { if (f) element = std::move(f); }
+
 		};
 
 		class UI {
@@ -193,12 +251,12 @@ namespace gl {
 			}
 
 			// Get UIWindow by index
-			inline UIWindow& getUI(size_t index) { return ui.at(index); }
-			inline const UIWindow& getUI(size_t index) const { return ui.at(index); }
+			inline UIWindow& getUIWindow(size_t index) { return ui.at(index); }
+			inline const UIWindow& getUIWindow(size_t index) const { return ui.at(index); }
 
 			// Get UIWindow by name
-			inline UIWindow& getUI(const std::string& name) { return ui.at(getUIIndex(name)); }
-			inline const UIWindow& getUI(const std::string& name) const { return ui.at(getUIIndex(name)); }
+			inline UIWindow& getUIWindow(const std::string& name) { return ui.at(getUIIndex(name)); }
+			inline const UIWindow& getUIWindow(const std::string& name) const { return ui.at(getUIIndex(name)); }
 
 			// Render
 			inline void render(size_t index) const { ui.at(index).render(); }
@@ -209,7 +267,7 @@ namespace gl {
 			inline void setUIElement(const std::string& name, std::function<void()> f) { ui.at(getUIIndex(name)).setElement(std::move(f)); }
 
 			// Add new UI window
-			inline void addUI(const std::string& n,
+			inline void addUIWindow(const std::string& n,
 				const glm::vec2& s = { 200.0f, 200.0f },
 				const glm::vec2& p = { 50.0f, 50.0f },
 				bool o = true,
@@ -226,7 +284,7 @@ namespace gl {
 			}
 
 			// Replace UIWindow by name
-			inline void setUI(const std::string& oldName,
+			inline void setUIWindow(const std::string& oldName,
 				const std::string& n,
 				const glm::vec2& s = { 200.0f, 200.0f },
 				const glm::vec2& p = { 50.0f, 50.0f },
@@ -242,7 +300,7 @@ namespace gl {
 			}
 
 			// Replace UIWindow by index
-			inline void setUI(size_t index,
+			inline void setUIWindow(size_t index,
 				const std::string& n,
 				const glm::vec2& s = { 200.0f, 200.0f },
 				const glm::vec2& p = { 50.0f, 50.0f },
@@ -336,7 +394,30 @@ namespace gl {
 			ImGui::EndFrame();
 		}
 
-		gl::window::UI& getUI() { return m_UI; }
+		gl::window::UIWindow& getUIWindow(const std::string& name) { return m_UI.getUIWindow(name); }
+
+		void addUIWindow(const std::string& n,
+			const glm::vec2& s = { 200.0f, 200.0f },
+			const glm::vec2& p = { 50.0f, 50.0f },
+			bool o = true,
+			ImGuiWindowFlags fs = ImGuiWindowFlags_None,
+			std::function<void()> f = nullptr
+			) 
+		{
+			m_UI.addUIWindow(n, s, p, o, fs, f);
+		}
+
+		void addChildUIWindow(const std::string& pn,
+			const std::string& cn,
+			const glm::vec2& s = { 200.0f, 200.0f },
+			const glm::vec2& p = { 50.0f, 50.0f },
+			bool o = true,
+			ImGuiWindowFlags fs = ImGuiWindowFlags_None,
+			std::function<void()> f = nullptr
+		)
+		{
+			m_UI.getUIWindow(pn).addChild(cn, s, p, o, fs, f);
+		}
 
 		void setUIFont(const char* path, float size = 20.0f) {
 			ImGui::GetIO().Fonts->Clear();
@@ -391,9 +472,9 @@ namespace gl {
 
 		inline void setScrollY(const double& other) { m_CursorCallBack.scrollY = other; }
 
-		inline const float getDeltaTime() const { return m_WindowCallBack.deltaTime; }
+		inline const double getDeltaTime() const { return m_WindowCallBack.deltaTime; }
 
-		inline const float getFps() const { return 1.0f / m_WindowCallBack.deltaTime; }
+		inline const double getFps() const { return 1.0f / m_WindowCallBack.deltaTime; }
 
 		inline const int vsync() const { return m_WindowCallBack.vsync; }
 

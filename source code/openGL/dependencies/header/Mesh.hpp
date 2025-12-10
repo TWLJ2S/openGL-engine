@@ -32,8 +32,6 @@
 
 namespace gl {
 
-    static inline unsigned textureIndex = 0;
-
     struct vertex {
         glm::vec3 Position;
         glm::vec3 Normal;
@@ -95,7 +93,6 @@ namespace gl {
         }
 
         void uploadLights() {
-            m_Shader->useProgram();
             glUniform1i(m_Shader->getUniformLoc("numLights"), (GLint)lights.size());
 
             for (size_t i = 0; i < lights.size(); ++i) {                   
@@ -137,48 +134,78 @@ namespace gl {
         }
 
         void processMesh(aiMesh* mesh) {
-            vertices.resize(mesh->mNumVertices);
+            size_t offset = vertices.size();
+            vertices.resize(offset + mesh->mNumVertices);
 
-            // copy positions, normals, UVs
             for (unsigned int i = 0; i < mesh->mNumVertices; i++) {
-                vertex& v = vertices[i];
-                v.Position = glm::vec3(mesh->mVertices[i].x, mesh->mVertices[i].y, mesh->mVertices[i].z);
-                v.Normal = mesh->HasNormals() ? glm::vec3(mesh->mNormals[i].x, mesh->mNormals[i].y, mesh->mNormals[i].z) : glm::vec3(0.0f, 0.0f, 1.0f);
-                v.TexCoords = mesh->mTextureCoords[0] ? glm::vec2(mesh->mTextureCoords[0][i].x, mesh->mTextureCoords[0][i].y) : glm::vec2(0.0f);
-                v.Tangent = glm::vec3(0.0f);
+                vertex& v = vertices[offset + i];
+
+                v.Position = {
+                    mesh->mVertices[i].x,
+                    mesh->mVertices[i].y,
+                    mesh->mVertices[i].z
+                };
+
+                v.Normal = mesh->HasNormals() ?
+                    glm::vec3(mesh->mNormals[i].x, mesh->mNormals[i].y, mesh->mNormals[i].z) :
+                    glm::vec3(0.0f, 0.0f, 1.0f);
+
+                if (mesh->HasTextureCoords(0)) {
+                    v.TexCoords = {
+                        mesh->mTextureCoords[0][i].x,
+                        mesh->mTextureCoords[0][i].y
+                    };
+                }
+                else {
+                    v.TexCoords = glm::vec2(0.0f);
+                }
+
+                if (mesh->HasTangentsAndBitangents()) {
+                    v.Tangent = glm::vec3(
+                        mesh->mTangents[i].x,
+                        mesh->mTangents[i].y,
+                        mesh->mTangents[i].z
+                    );
+                }
+                else {
+                    v.Tangent = glm::vec3(0.0f);
+                }
             }
 
-            // compute tangents per triangle
-            for (unsigned int i = 0; i < mesh->mNumFaces; i++) {
-                aiFace face = mesh->mFaces[i];
-                if (face.mNumIndices != 3) continue;
+            if (!mesh->HasTangentsAndBitangents()) {
+                for (unsigned int i = 0; i < mesh->mNumFaces; i++) {
+                    const aiFace& face = mesh->mFaces[i];
+                    if (face.mNumIndices != 3) continue;
 
-                vertex& v0 = vertices[face.mIndices[0]];
-                vertex& v1 = vertices[face.mIndices[1]];
-                vertex& v2 = vertices[face.mIndices[2]];
+                    vertex& v0 = vertices[offset + face.mIndices[0]];
+                    vertex& v1 = vertices[offset + face.mIndices[1]];
+                    vertex& v2 = vertices[offset + face.mIndices[2]];
 
-                glm::vec3 edge1 = v1.Position - v0.Position;
-                glm::vec3 edge2 = v2.Position - v0.Position;
-                glm::vec2 deltaUV1 = v1.TexCoords - v0.TexCoords;
-                glm::vec2 deltaUV2 = v2.TexCoords - v0.TexCoords;
+                    glm::vec3 e1 = v1.Position - v0.Position;
+                    glm::vec3 e2 = v2.Position - v0.Position;
+                    glm::vec2 duv1 = v1.TexCoords - v0.TexCoords;
+                    glm::vec2 duv2 = v2.TexCoords - v0.TexCoords;
 
-                float f = 1.0f / (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y + 1e-8f);
-                glm::vec3 tangent(f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x),
-                    f * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y),
-                    f * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z));
+                    float f = 1.0f / (duv1.x * duv2.y - duv2.x * duv1.y + 1e-8f);
 
-                v0.Tangent += tangent;
-                v1.Tangent += tangent;
-                v2.Tangent += tangent;
+                    glm::vec3 t(
+                        f * (duv2.y * e1.x - duv1.y * e2.x),
+                        f * (duv2.y * e1.y - duv1.y * e2.y),
+                        f * (duv2.y * e1.z - duv1.y * e2.z)
+                    );
+
+                    v0.Tangent += t;
+                    v1.Tangent += t;
+                    v2.Tangent += t;
+                }
+
+                for (size_t i = offset; i < vertices.size(); i++)
+                    vertices[i].Tangent = glm::normalize(vertices[i].Tangent);
             }
 
-            // normalize tangents
-            for (auto& v : vertices) v.Tangent = glm::normalize(v.Tangent);
-
-            // store indices
             for (unsigned int i = 0; i < mesh->mNumFaces; i++)
                 for (unsigned int j = 0; j < mesh->mFaces[i].mNumIndices; j++)
-                    indices.emplace_back(mesh->mFaces[i].mIndices[j]);
+                    indices.emplace_back(mesh->mFaces[i].mIndices[j] + offset);
         }
 
         void loadTextures(const aiScene* scene, const std::string& modelPath) {
@@ -188,32 +215,45 @@ namespace gl {
                 auto loadTex = [&](aiTextureType type, const std::string& name) {
                     if (mat->GetTextureCount(type) == 0) return;
 
-                    aiString str; mat->GetTexture(type, 0, &str);
+                    aiString str;
+                    mat->GetTexture(type, 0, &str);
+
                     if (str.C_Str()[0] == '*') {
                         int texIndex = atoi(str.C_Str() + 1);
                         aiTexture* tex = scene->mTextures[texIndex];
+
                         int w, h, ch;
                         unsigned char* data = nullptr;
 
                         if (tex->mHeight == 0) {
-                            data = stbi_load_from_memory(reinterpret_cast<unsigned char*>(tex->pcData), tex->mWidth, &w, &h, &ch, 0);
+                            data = stbi_load_from_memory(
+                                reinterpret_cast<unsigned char*>(tex->pcData),
+                                tex->mWidth, &w, &h, &ch, 0
+                            );
                             if (!data) return;
+
                             textures.push_back({ name, new gl::texture2D(data, w, h, ch) });
                             stbi_image_free(data);
                         }
                         else {
-                            w = tex->mWidth; h = tex->mHeight; ch = 4;
-                            unsigned char* raw = new unsigned char[w * h * 4];
-                            memcpy(raw, tex->pcData, w * h * 4);
-                            textures.push_back({ name, new gl::texture2D(raw, w, h, ch) });
-                            delete[] raw;
+                            w = tex->mWidth;
+                            h = tex->mHeight;
+                            ch = 4;
+
+                            std::unique_ptr<unsigned char[]> raw(new unsigned char[w * h * 4]);
+                            memcpy(raw.get(), tex->pcData, w * h * 4);
+
+                            textures.push_back({ name, new gl::texture2D(raw.get(), w, h, ch) });
                         }
                     }
                     else {
-                        std::filesystem::path texPath = std::filesystem::path(modelPath).parent_path() / str.C_Str();
-                        if (std::filesystem::exists(texPath)) textures.push_back({ name, new gl::texture2D(texPath.string()) });
+                        std::filesystem::path texPath =
+                            std::filesystem::path(modelPath).parent_path() / str.C_Str();
+
+                        if (std::filesystem::exists(texPath))
+                            textures.push_back({ name, new gl::texture2D(texPath.string()) });
                     }
-                    };
+                };
 
                 loadTex(aiTextureType_DIFFUSE, "baseColor");
                 loadTex(aiTextureType_NORMALS, "normal");

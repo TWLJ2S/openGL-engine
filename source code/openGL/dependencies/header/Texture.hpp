@@ -23,9 +23,17 @@ namespace gl {
             glBindTexture(GL_TEXTURE_2D, m_Texture);
 
             GLenum format;
-            if (m_NrChannels == 1) format = GL_RED;
-            else if (m_NrChannels == 3) format = GL_RGB;
-            else format = GL_RGBA;
+            switch (m_NrChannels) {
+            case 1:
+                format = GL_RED;
+                break;
+            case 3:
+                format = GL_RGB;
+                break;
+            case 4:
+                format = GL_RGBA;
+                break;
+            }
 
             glTexImage2D(GL_TEXTURE_2D, 0, format, m_Width, m_Height, 0, format, GL_UNSIGNED_BYTE, m_Data);
             glGenerateMipmap(GL_TEXTURE_2D);
@@ -61,9 +69,17 @@ namespace gl {
             glBindTexture(GL_TEXTURE_2D, m_Texture);
 
             GLenum format;
-            if (channels == 1) format = GL_RED;
-            else if (channels == 3) format = GL_RGB;
-            else format = GL_RGBA;
+            switch (channels) {
+            case 1:
+                format = GL_RED;
+                break;
+            case 3:
+                format = GL_RGB;
+                break;
+            case 4:
+                format = GL_RGBA;
+                break;
+            }
 
             glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
             glGenerateMipmap(GL_TEXTURE_2D);

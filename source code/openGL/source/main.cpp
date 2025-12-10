@@ -45,8 +45,10 @@ int main() {
     bool ifpress = false;
     bool pause = true;
 
-    window->getUI().addUI(
-        "settings",
+    int targetedFps = 60;
+
+    window->addUIWindow(
+        "pause",
         glm::vec2(window->getWidth(), window->getHeight()),
         glm::vec2(0.0f),
         true, // open
@@ -54,13 +56,57 @@ int main() {
         [&]() {
             float aspect = (float)window->getWidth() / 4.0f;
             ImVec2 size(0.4f * aspect, 0.3f * aspect);
+
             if (ImGui::Button("resume", size)) {
                 pause = false;
+            }
+
+            if (ifpress) {
+                if (window->getKeyRelease(GLFW_KEY_ESCAPE)) {
+                    ifpress = false;
+                }
+            }
+            else {
+                if (window->getKeyPress(GLFW_KEY_ESCAPE)) {
+                    pause = !pause;
+                    ifpress = true;
+                }
+            }
+
+            if (ImGui::Button("video settings", size)) {
+                auto* child = window->getUIWindow("pause").getChild("video settings");
+                if (child) {
+                    child->open = true;                        // show child
+                    window->getUIWindow("pause").renderIsSuppressed = true; // hide parent
+                }
             }
         }
     );
 
-    window->getUI().addUI("fps counter", glm::vec2(200.0f, 150.0f), glm::vec2(0.0f), true, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove,
+    window->addChildUIWindow(
+        "pause", 
+        "video settings",
+        glm::vec2(window->getWidth(), window->getHeight()),
+        glm::vec2(0.0f),
+        true, // open
+        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove,
+        [child = window->getUIWindow("pause").getChild("video settings"), window, &targetedFps, &ifpress]() {
+            if (!child || !child->open) return; // don't render if closed
+
+            // Close child if Escape pressed
+            if (!ifpress && window->getKeyPress(GLFW_KEY_ESCAPE)) {
+                child->open = false;                       // close child
+                if (child->parent) child->parent->renderIsSuppressed = false; // show parent again
+                return;
+            }
+
+            // Child UI content
+            //ImGui::Text("Video Settings");
+            ImGui::DragInt("Targeted FPS: ", &targetedFps, 1.0f, 15, 1000, "%d", 0);
+        }
+    );
+
+    window->addUIWindow("fps counter", glm::vec2(200.0f, 150.0f), glm::vec2(0.0f), true, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove,
         [&]() {
             ImGui::Text("fps: %.3f", window->getFps());
         }
@@ -72,20 +118,6 @@ int main() {
 
     char weapon = 0;
 
-    /*window.addUI("offset", glm::vec2(500.0f, 300.0f), glm::vec2(0.0f, 150.0f), (bool*)true, ImGuiWindowFlags_None,
-        [&]() {
-            ImGui::DragFloat("x: ", &offset.x, 0.01f, -5.0f, 5.0f);
-            ImGui::DragFloat("y: ", &offset.y, 0.01f, -5.0f, 5.0f);
-            ImGui::DragFloat("z: ", &offset.z, 0.01f, -5.0f, 5.0f);
-
-            ImGui::DragFloat("scale: ", &scale, 0.01f, -3.0f, 3.0f);
-
-            ImGui::DragFloat("rot x: ", &rot.x, 0.01f, -30.0f, 30.0f);
-            ImGui::DragFloat("rot y: ", &rot.y, 0.01f, -30.0f, 30.0f);
-
-        }
-    );*/
-
     const glm::mat4 modelMat(
         30.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 30.0f, 0.0f, 0.0f,
@@ -94,56 +126,58 @@ int main() {
     );
 
     while (window->ifRun()) {
+        auto frameStart = std::chrono::high_resolution_clock::now();
+
         window->clearColor(glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
   
         window->imguiNewFrame();
   
-        if (ifpress) {
-            if (window->getKeyRelease(GLFW_KEY_ESCAPE)) {
-                ifpress = false;
-            }
-        }
-        else {
-            if (window->getKeyPress(GLFW_KEY_ESCAPE)) {
-                pause = !pause;
-                ifpress = true;
-            }
-        }
-  
         if (pause) {
             window->setInputMode(GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-            window->getUI().getUI("settings").size = glm::vec2(window->getWidth(), window->getHeight());
-            window->getUI().render("settings");
+            window->getUIWindow("pause").size = glm::vec2(window->getWidth(), window->getHeight());
+            window->getUIWindow("pause").render();
         }
         else {
-            window->getUI().render("fps counter");
+
+            if (ifpress) {
+                if (window->getKeyRelease(GLFW_KEY_ESCAPE)) {
+                    ifpress = false;
+                }
+            }
+            else {
+                if (window->getKeyPress(GLFW_KEY_ESCAPE)) {
+                    pause = !pause;
+                    ifpress = true;
+                }
+            }
+
+            window->getUIWindow("fps counter").render();
             window->setInputMode(GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             player.update();
+
+            model.draw(modelMat);
+
+            weapon += window->getCursorCallBack().scrollY;
+
+            switch (weapon) {
+            case -2:
+                weapon = 1;
+            case -1: {
+                awp.draw(gl::getItemModel(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
+                break;
+            }
+            case 0: {
+                M4A1.draw(gl::getItemModel(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
+                break;
+            }
+            case 1: {
+                usp.draw(gl::getItemModel(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
+                break;
+            }
+            case 2:
+                weapon = -1;
+            }
         }
-  
-        weapon += window->getCursorCallBack().scrollY;
-  
-        switch (weapon) {
-        case -2:
-            weapon = 1;
-        case -1: {
-            awp.draw(gl::getItemModel(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
-            break;
-        }
-        case 0: {
-            M4A1.draw(gl::getItemModel(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
-            break;
-        }
-        case 1: {
-            usp.draw(gl::getItemModel(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
-            break;
-        }
-        case 2:
-            weapon = -1;
-        }        
-        
-        // Draw model in front of camera (adjust position as needed)
-        model.draw(modelMat);
   
         window->imguiRender();
   
@@ -158,7 +192,8 @@ int main() {
             else std::cout << "opengl error: " << err << std::endl;
         }*/
 
-        std::this_thread::sleep_for((std::chrono::milliseconds)1);
+        double sleepTime = (1.0 / (double)targetedFps) - (std::chrono::high_resolution_clock::now() - frameStart).count();
+        if (sleepTime > 0.0) std::this_thread::sleep_for(std::chrono::duration<double>(sleepTime));
     }
 
     glfwTerminate();

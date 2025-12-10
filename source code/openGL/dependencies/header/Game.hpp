@@ -123,7 +123,7 @@ namespace gl {
 			if (m_Window->getKeyPress(GLFW_KEY_LEFT_SHIFT)) m_Velocity -= m_Camera.getUpVector();
 			m_Velocity *= m_Window->getKeyPress(GLFW_KEY_C) ? 0.7f : 0.9f;
 
-			m_Camera.setPos(m_Camera.getPos() + m_Velocity * m_Window->getDeltaTime());
+			m_Camera.setPos(m_Camera.getPos() + m_Velocity * (float)m_Window->getDeltaTime());
 		}
 
 	public:
