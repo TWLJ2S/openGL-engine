@@ -53,9 +53,10 @@ int main() {
         glm::vec2(0.0f),
         true, // open
         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove,
-        [&]() {
+        [&pause, &window, &ifpress, ui = &window->getUIWindow("pause")]() {
             float aspect = (float)window->getWidth() / 4.0f;
             ImVec2 size(0.4f * aspect, 0.3f * aspect);
+            ui->size = {size.x, size.y};
 
             if (ImGui::Button("resume", size)) {
                 pause = false;
@@ -74,11 +75,8 @@ int main() {
             }
 
             if (ImGui::Button("video settings", size)) {
-                auto* child = window->getUIWindow("pause").getChild("video settings");
-                if (child) {
-                    child->open = true;                        // show child
-                    window->getUIWindow("pause").renderIsSuppressed = true; // hide parent
-                }
+                ui->getChild("video settings")->renderIsSuppressed = false;      
+                ui->renderIsSuppressed = true;
             }
         }
     );
@@ -90,13 +88,17 @@ int main() {
         glm::vec2(0.0f),
         true, // open
         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove,
-        [child = window->getUIWindow("pause").getChild("video settings"), window, &targetedFps, &ifpress]() {
-            if (!child || !child->open) return; // don't render if closed
+        [ui = window->getUIWindow("pause").getChild("video settings"), &window, &targetedFps, &ifpress]() {
+            if (!ui->renderIsSuppressed) return;
+
+            float aspect = (float)window->getWidth() / 4.0f;
+            ImVec2 size(0.4f * aspect, 0.3f * aspect);
+            ui->size = { size.x, size.y };
 
             // Close child if Escape pressed
             if (!ifpress && window->getKeyPress(GLFW_KEY_ESCAPE)) {
-                child->open = false;                       // close child
-                if (child->parent) child->parent->renderIsSuppressed = false; // show parent again
+                ui->parent->renderIsSuppressed = false;
+                ui->renderIsSuppressed = true;
                 return;
             }
 
@@ -134,7 +136,6 @@ int main() {
   
         if (pause) {
             window->setInputMode(GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-            window->getUIWindow("pause").size = glm::vec2(window->getWidth(), window->getHeight());
             window->getUIWindow("pause").render();
         }
         else {

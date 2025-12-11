@@ -171,15 +171,6 @@ namespace gl {
 			{
 			}
 
-			std::function<void()> getEffectiveElement() const {
-				const UIWindow* cur = this;
-				while (cur) {
-					if (cur->element) return cur->element;
-					cur = cur->parent;
-				}
-				return nullptr; // returns empty std::function, safe
-			}
-
 			// --------------------------------
 			// Add child window
 			// --------------------------------
@@ -192,7 +183,8 @@ namespace gl {
 			{
 				// Explicitly construct UIWindow with `new` instead of std::make_unique
 				auto child = std::unique_ptr<UIWindow>(new UIWindow(childName, s, p, o, fs, std::move(f), this));
-				children.push_back(std::move(child));
+				children.emplace_back(std::move(child));
+				children.back()->renderIsSuppressed = true;
 				childMap.emplace(childName, static_cast<unsigned>(childMap.size()));
 			}
 
@@ -204,30 +196,25 @@ namespace gl {
 
 			void suppressParentRender(bool other) { if (parent) parent->renderIsSuppressed = other; }
 
+			void suppressChildRender(const std::string& name, bool other) { children[childMap[name]]->renderIsSuppressed = other; }
+
 			// --------------------------------
 			// Render this window
 			// --------------------------------
 			void render() const {
-				if (renderIsSuppressed) return;
+				if (!renderIsSuppressed) {
+					ImGui::SetNextWindowSize(ImVec2(size.x, size.y), ImGuiCond_Always);
+					ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y), ImGuiCond_Always);
 
-				// Temporarily suppress parent
-				bool oldParentSuppress = false;
-				if (parent) {
-					oldParentSuppress = parent->renderIsSuppressed;
-					parent->renderIsSuppressed = true;
+					ImGui::Begin(name.c_str(), const_cast<bool*>(&open), flags);
+
+					if (element) element();
+
+					ImGui::End();
 				}
-
-				ImGui::SetNextWindowSize(ImVec2(size.x, size.y), ImGuiCond_Always);
-				ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y), ImGuiCond_Always);
-
-				ImGui::Begin(name.c_str(), const_cast<bool*>(&open), flags);
-
-				if (auto el = getEffectiveElement()) el();
-
-				ImGui::End();
-
-				// Restore parent suppression
-				if (parent) parent->renderIsSuppressed = oldParentSuppress;
+				for (auto& child : children) {
+					if (!child->renderIsSuppressed) child->render();
+				}
 			}
 
 			// Set the UI element; only stores if f is valid
