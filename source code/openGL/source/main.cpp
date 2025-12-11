@@ -53,10 +53,13 @@ int main() {
         glm::vec2(0.0f),
         true, // open
         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove,
-        [&pause, &window, &ifpress, ui = &window->getUIWindow("pause")]() {
-            float aspect = (float)window->getWidth() / 4.0f;
-            ImVec2 size(0.4f * aspect, 0.3f * aspect);
-            ui->size = {size.x, size.y};
+        [&]() {
+            auto ui = &window->getUIWindow("pause");
+            if (ui->renderIsSuppressed) return;
+
+            ui->size = glm::vec2((float)window->getWidth(), (float)window->getHeight());
+            float aspect = (float)window->getWidth() / 3.2f;
+            ImVec2 size(aspect, 0.75 * aspect);
 
             if (ImGui::Button("resume", size)) {
                 pause = false;
@@ -88,16 +91,16 @@ int main() {
         glm::vec2(0.0f),
         true, // open
         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove,
-        [ui = window->getUIWindow("pause").getChild("video settings"), &window, &targetedFps, &ifpress]() {
-            if (!ui->renderIsSuppressed) return;
+        [&]() {
+            auto parent = &window->getUIWindow("pause");
+            auto ui = parent->getChild("video settings");
+            if (ui->renderIsSuppressed) return;
 
-            float aspect = (float)window->getWidth() / 4.0f;
-            ImVec2 size(0.4f * aspect, 0.3f * aspect);
-            ui->size = { size.x, size.y };
+            ui->size = glm::vec2((float)window->getWidth(), (float)window->getHeight());
 
             // Close child if Escape pressed
             if (!ifpress && window->getKeyPress(GLFW_KEY_ESCAPE)) {
-                ui->parent->renderIsSuppressed = false;
+                parent->renderIsSuppressed = false;
                 ui->renderIsSuppressed = true;
                 return;
             }
@@ -192,8 +195,7 @@ int main() {
             if (err == GL_NO_ERROR) break;
             else std::cout << "opengl error: " << err << std::endl;
         }*/
-
-        double sleepTime = (1.0 / (double)targetedFps) - (std::chrono::high_resolution_clock::now() - frameStart).count();
+        double sleepTime = (1.0 / (double)targetedFps) - std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - frameStart).count();
         if (sleepTime > 0.0) std::this_thread::sleep_for(std::chrono::duration<double>(sleepTime));
     }
 

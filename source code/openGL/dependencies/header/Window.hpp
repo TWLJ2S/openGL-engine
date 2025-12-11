@@ -143,49 +143,43 @@ namespace gl {
 			std::function<void()> element;
 			glm::vec2 size;
 			glm::vec2 pos;
-			bool open;
-			ImGuiWindowFlags flags;
+			bool open = true;
+			ImGuiWindowFlags flags = ImGuiWindowFlags_None;
 
 			std::vector<std::unique_ptr<UIWindow>> children;
-			UIWindow* parent;
+			UIWindow* parent = nullptr;
 			std::unordered_map<std::string, unsigned> childMap;
+
 			bool renderIsSuppressed = false;
-
-			UIWindow(const UIWindow&) = delete;            // no copy
-			UIWindow& operator=(const UIWindow&) = delete; // no copy assignment
-
-			UIWindow(UIWindow&&) noexcept = default;       // allow move
-			UIWindow& operator=(UIWindow&&) noexcept = default; // allow move assignment
 
 			UIWindow() = default;
 
 			UIWindow(const std::string& n,
-				const glm::vec2& s = { 200.0f, 200.0f },
-				const glm::vec2& p = { 50.0f, 50.0f },
-				bool o = true,
-				ImGuiWindowFlags fs = ImGuiWindowFlags_None,
-				std::function<void()> f = nullptr,
-				UIWindow* pa = nullptr
-			)
-				: name(n), size(s), pos(p), open(o), flags(fs), element(std::move(f)), parent(pa)
-			{
+				const glm::vec2& s,
+				const glm::vec2& p,
+				bool o,
+				ImGuiWindowFlags fs,
+				std::function<void()> f,
+				UIWindow* pa)
+				: name(n), element(std::move(f)),
+				size(s), pos(p), open(o), flags(fs), parent(pa) {
 			}
 
-			// --------------------------------
 			// Add child window
-			// --------------------------------
 			inline void addChild(const std::string& childName,
-				const glm::vec2& s = { 200.0f, 200.0f },
-				const glm::vec2& p = { 50.0f, 50.0f },
-				bool o = true,
-				ImGuiWindowFlags fs = ImGuiWindowFlags_None,
-				std::function<void()> f = nullptr)
+				const glm::vec2& s,
+				const glm::vec2& p,
+				bool o,
+				ImGuiWindowFlags fs,
+				std::function<void()> f)
 			{
-				// Explicitly construct UIWindow with `new` instead of std::make_unique
-				auto child = std::unique_ptr<UIWindow>(new UIWindow(childName, s, p, o, fs, std::move(f), this));
+				auto child = std::make_unique<UIWindow>(
+					childName, s, p, o, fs, std::move(f), this
+				);
+
+				child->renderIsSuppressed = true; // start hidden
+				childMap.emplace(childName, children.size());
 				children.emplace_back(std::move(child));
-				children.back()->renderIsSuppressed = true;
-				childMap.emplace(childName, static_cast<unsigned>(childMap.size()));
 			}
 
 			UIWindow* getChild(const std::string& name) const {
@@ -194,109 +188,77 @@ namespace gl {
 				return children[it->second].get();
 			}
 
-			void suppressParentRender(bool other) { if (parent) parent->renderIsSuppressed = other; }
-
-			void suppressChildRender(const std::string& name, bool other) { children[childMap[name]]->renderIsSuppressed = other; }
-
-			// --------------------------------
-			// Render this window
-			// --------------------------------
+			// -------------- SAFE RENDER (no Begin when suppressed) --------------
 			void render() const {
 				if (!renderIsSuppressed) {
+
 					ImGui::SetNextWindowSize(ImVec2(size.x, size.y), ImGuiCond_Always);
 					ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y), ImGuiCond_Always);
 
-					ImGui::Begin(name.c_str(), const_cast<bool*>(&open), flags);
-
-					if (element) element();
-
+					if (ImGui::Begin(name.c_str(), const_cast<bool*>(&open), flags)) {
+						if (element) element();
+					}
 					ImGui::End();
 				}
-				for (auto& child : children) {
-					if (!child->renderIsSuppressed) child->render();
-				}
+
+				// Render children recursively
+				for (auto& child : children)
+					child->render();
 			}
 
-			// Set the UI element; only stores if f is valid
-			void setElement(std::function<void()> f) { if (f) element = std::move(f); }
-
+			void setElement(std::function<void()> f) {
+				if (f) element = std::move(f);
+			}
 		};
 
 		class UI {
 		private:
 			std::unordered_map<std::string, unsigned> iMap;
-			std::vector<UIWindow> ui;
+			std::vector<std::unique_ptr<UIWindow>> ui;
 
 		public:
 			UI() = default;
 
-			// Get index safely
-			inline unsigned getUIIndex(const std::string& name) const {
+			unsigned getUIIndex(const std::string& name) const {
 				auto it = iMap.find(name);
-				if (it == iMap.end()) throw std::runtime_error("UI not found: " + name);
+				if (it == iMap.end())
+					throw std::runtime_error("UI not found: " + name);
 				return it->second;
 			}
 
-			// Get UIWindow by index
-			inline UIWindow& getUIWindow(size_t index) { return ui.at(index); }
-			inline const UIWindow& getUIWindow(size_t index) const { return ui.at(index); }
+			UIWindow& getUIWindow(const std::string& name) {
+				return *ui.at(getUIIndex(name));
+			}
 
-			// Get UIWindow by name
-			inline UIWindow& getUIWindow(const std::string& name) { return ui.at(getUIIndex(name)); }
-			inline const UIWindow& getUIWindow(const std::string& name) const { return ui.at(getUIIndex(name)); }
+			void render(const std::string& name) const {
+				ui.at(getUIIndex(name))->render();
+			}
 
-			// Render
-			inline void render(size_t index) const { ui.at(index).render(); }
-			inline void render(const std::string& name) const { ui.at(getUIIndex(name)).render(); }
-
-			// Set element function
-			inline void setUIElement(size_t index, std::function<void()> f) { ui.at(index).setElement(std::move(f)); }
-			inline void setUIElement(const std::string& name, std::function<void()> f) { ui.at(getUIIndex(name)).setElement(std::move(f)); }
-
-			// Add new UI window
-			inline void addUIWindow(const std::string& n,
-				const glm::vec2& s = { 200.0f, 200.0f },
-				const glm::vec2& p = { 50.0f, 50.0f },
-				bool o = true,
-				ImGuiWindowFlags fs = ImGuiWindowFlags_None,
-				std::function<void()> f = nullptr)
+			void addUIWindow(const std::string& n,
+				const glm::vec2& s,
+				const glm::vec2& p,
+				bool o,
+				ImGuiWindowFlags fs,
+				std::function<void()> f)
 			{
-				if (iMap.find(n) != iMap.end())
+				if (iMap.contains(n))
 					throw std::runtime_error("UI name already exists: " + n);
 
-				ui.emplace_back(UIWindow(n, s, p, o, fs));
-				if (f) ui.back().setElement(std::move(f));
+				auto win = std::make_unique<UIWindow>(n, s, p, o, fs, std::move(f), nullptr);
 
-				iMap[n] = static_cast<unsigned>(ui.size() - 1);
+				iMap[n] = ui.size();
+				ui.emplace_back(std::move(win));
 			}
 
-			// Replace UIWindow by name
-			inline void setUIWindow(const std::string& oldName,
-				const std::string& n,
-				const glm::vec2& s = { 200.0f, 200.0f },
-				const glm::vec2& p = { 50.0f, 50.0f },
-				bool o = true,
-				ImGuiWindowFlags fs = ImGuiWindowFlags_None,
-				std::function<void()> f = nullptr)
+			void addChildUIWindow(const std::string& parentName,
+				const std::string& childName,
+				const glm::vec2& s,
+				const glm::vec2& p,
+				bool o,
+				ImGuiWindowFlags fs,
+				std::function<void()> f)
 			{
-				unsigned index = getUIIndex(oldName);
-				ui.at(index) = UIWindow(n, s, p, o, fs);
-				if (f) ui.at(index).setElement(std::move(f));
-				iMap.erase(oldName);
-				iMap[n] = index;
-			}
-
-			// Replace UIWindow by index
-			inline void setUIWindow(size_t index,
-				const std::string& n,
-				const glm::vec2& s = { 200.0f, 200.0f },
-				const glm::vec2& p = { 50.0f, 50.0f },
-				bool o = true,
-				ImGuiWindowFlags fs = ImGuiWindowFlags_None,
-				std::function<void()> f = nullptr)
-			{
-				ui.at(index) = UIWindow(n, s, p, o, fs);
-				if (f) ui.at(index).setElement(std::move(f));
+				getUIWindow(parentName).addChild(childName, s, p, o, fs, std::move(f));
 			}
 		};
 
