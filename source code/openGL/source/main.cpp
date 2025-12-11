@@ -26,6 +26,8 @@ int main() {
 
     if (glewInit() != GLEW_OK) return -1;
 
+    window->vsync(0);
+
     auto shader = std::make_shared<gl::shader>("resource/shader/vert.glsl", "resource/shader/frag.glsl");
 
     shader->useProgram();
@@ -45,7 +47,7 @@ int main() {
     bool ifpress = false;
     bool pause = true;
 
-    int targetedFps = 60;
+    int targetedFps = 500;
 
     window->addUIWindow(
         "pause",
@@ -98,16 +100,15 @@ int main() {
 
             ui->size = glm::vec2((float)window->getWidth(), (float)window->getHeight());
 
+            ImGui::DragInt("Targeted FPS: ", &targetedFps, 1.0f, 15, 1000, "%d", 0);
+
             // Close child if Escape pressed
             if (!ifpress && window->getKeyPress(GLFW_KEY_ESCAPE)) {
                 parent->renderIsSuppressed = false;
                 ui->renderIsSuppressed = true;
+                ifpress = true;
                 return;
             }
-
-            // Child UI content
-            //ImGui::Text("Video Settings");
-            ImGui::DragInt("Targeted FPS: ", &targetedFps, 1.0f, 15, 1000, "%d", 0);
         }
     );
 
