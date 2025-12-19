@@ -557,6 +557,60 @@ namespace gl {
                 glUniform3fv(loc, 1, glm::value_ptr(data));
             }
         }
+
+        void setUniform1i(const std::string& name, int value) {
+            GLint loc = getUniformLoc(name);
+            if (loc >= 0)
+                glUniform1i(loc, value);
+        }
+
+        void setUniform1f(const std::string& name, float value) {
+            GLint loc = getUniformLoc(name);
+            if (loc >= 0)
+                glUniform1f(loc, value);
+        }
+
+        void setUniform2f(const std::string& name, const glm::vec2& value) {
+            GLint loc = getUniformLoc(name);
+            if (loc >= 0)
+                glUniform2f(loc, value.x, value.y);
+        }
+
+        void setUniform3f(const std::string& name, const glm::vec3& value) {
+            GLint loc = getUniformLoc(name);
+            if (loc >= 0)
+                glUniform3f(loc, value.x, value.y, value.z);
+        }
+
+        void setUniform4f(const std::string& name, const glm::vec4& value) {
+            GLint loc = getUniformLoc(name);
+            if (loc >= 0)
+                glUniform4f(loc, value.x, value.y, value.z, value.w);
+        }
+
+        void setUniform1fv(const std::string& name, int count, const float* values) {
+            GLint loc = getUniformLoc(name);
+            if (loc >= 0)
+                glUniform1fv(loc, count, values);
+        }
+
+        void setUniformMatrix3fv(const std::string& name, const glm::mat3& matrix) {
+            GLint loc = getUniformLoc(name);
+            if (loc >= 0)
+                glUniformMatrix3fv(loc, 1, GL_FALSE, glm::value_ptr(matrix));
+        }
+
+        // Array uniforms for lights (used in your frag.glsl)
+        void setUniform3fv(const std::string& baseName, int index, const glm::vec3& value) {
+            GLint loc = getUniformLoc(baseName, index);
+            if (loc >= 0)
+                glUniform3fv(loc, 1, glm::value_ptr(value));
+        }
+
+        // For setting texture units
+        void setUniformSampler(const std::string& name, int textureUnit) {
+            setUniform1i(name, textureUnit);
+        }
     };
 
     class camera {

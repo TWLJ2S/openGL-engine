@@ -14,12 +14,6 @@
 #include <Window.hpp>
 #include <Utils.hpp>
 
-#ifndef GL_MAX_VIEW_DISTANCE
-
-#define GL_MAX_VIEW_DISTANCE 10000.0f
-
-#endif
-
 namespace gl {
 
 	class player {
@@ -93,7 +87,7 @@ namespace gl {
 			}
 
 			// update the projection matrix
-			if (fov != m_Camera.getFov()) setFov(glm::mix(m_Camera.getFov(), fov, 15.0f * m_Window->getDeltaTime()), (float)m_Window->getWidth() / (float)m_Window->getHeight());
+			if (fov != m_Camera.getFov()) setFov(glm::mix(m_Camera.getFov(), fov, 15.0 * m_Window->getDeltaTime()), (float)m_Window->getWidth() / (float)m_Window->getHeight());
 
 			// --- UPDATE FRONT VECTOR ---
 			glm::vec3 front;
@@ -101,9 +95,7 @@ namespace gl {
 			front.y = sin(glm::radians(Pitch));
 			front.z = sin(glm::radians(Yaw)) * cos(glm::radians(Pitch));
 
-			glm::vec3 Front = (glm::length(front) > 0.0f)
-				? glm::normalize(front)
-				: glm::vec3(0.0f, 0.0f, -1.0f);
+			glm::vec3 Front = (glm::length(front) > 0.0f) ? glm::normalize(front) : glm::vec3(0.0f, 0.0f, -1.0f);
 
 			// Update camera's front vector
 			m_Camera.setFront(Front);
@@ -121,7 +113,7 @@ namespace gl {
 			if (m_Window->getKeyPress(GLFW_KEY_D)) m_Velocity += right;
 			if (m_Window->getKeyPress(GLFW_KEY_SPACE)) m_Velocity += m_Camera.getUpVector();
 			if (m_Window->getKeyPress(GLFW_KEY_LEFT_SHIFT)) m_Velocity -= m_Camera.getUpVector();
-			m_Velocity *= m_Window->getKeyPress(GLFW_KEY_C) ? 0.7f : 0.9f;
+			m_Velocity *= m_Window->getKeyPress(GLFW_KEY_C) ? 0.75f : 0.92f;
 
 			m_Camera.setPos(m_Camera.getPos() + m_Velocity * (float)m_Window->getDeltaTime());
 		}

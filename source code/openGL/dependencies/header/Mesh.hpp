@@ -1,301 +1,382 @@
 #pragma once
+
+// Graphics headers
+#include <GL/glew.h>
+#include <GLFW/glfw3.h>
+
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
-#include <GLFW/glfw3.h>
-#include <GL/glew.h>
+#include <glm.hpp>
+#include <gtc/matrix_transform.hpp>
+#include <gtc/type_ptr.hpp>
 
-#include <glm.hpp>            
-#include <gtc/matrix_transform.hpp> 
-#include <gtc/type_ptr.hpp> 
+// Physics headers
+#include <Jolt/Jolt.h>
+#include <Jolt/RegisterTypes.h>
+#include <Jolt/Physics/PhysicsSystem.h>
+#include <Jolt/Physics/Body/BodyCreationSettings.h>
+#include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 
-#include <stb_image.h>
-
+// Utility headers
 #include <Window.hpp>
 #include <Utils.hpp>
+#include <Texture.hpp>
 
-#include <fstream>
-#include <filesystem>
-#include <string>
-#include <iostream>
+// Standard headers
 #include <vector>
-#include <stdexcept>
+#include <memory>
+#include <string>
 #include <unordered_map>
-
-#ifndef MODEL_PATH
-
-#define MODEL_PATH "resource/model"
-
-#endif // MODEL_PATH
-
+#include <iostream>
 
 namespace gl {
 
-    struct vertex {
-        glm::vec3 Position;
-        glm::vec3 Normal;
-        glm::vec2 TexCoords;
-        glm::vec3 Tangent;
-    };
+    // Simple physics initialization
+    bool InitializePhysics() {
+        static bool initialized = false;
+        if (initialized) return true;
 
-#define VERT_SIZE sizeof(vertex)
+        JPH::RegisterDefaultAllocator();
+        JPH::Factory::sInstance = new JPH::Factory();
+        JPH::RegisterTypes();
 
-    struct Light {
-        glm::vec3 position;
-        glm::vec3 color;
-    };
+        initialized = true;
+        std::cout << "Physics initialized" << std::endl;
+        return true;
+    }
 
-    class object {
-    private:
-        struct TexEntry {
-            std::string name;          // logical name (e.g., "baseColor")
-            gl::texture2D* text;       // raw pointer (ownership handled elsewhere)
+    // ============ MESH STRUCT ============
+    struct Mesh {
+        struct Vertex {
+            glm::vec3 position;
+            glm::vec3 normal;
+            glm::vec2 texCoords;
+            glm::vec3 tangent;
+            glm::vec3 bitangent;
         };
 
-        std::vector<vertex> vertices;
+        std::vector<Vertex> vertices;
         std::vector<unsigned int> indices;
-        std::vector<Light> lights;
-        GLuint VAO = 0, VBO = 0, EBO = 0;
-        std::vector<TexEntry> textures;
-        std::shared_ptr<gl::shader> m_Shader;
-        Assimp::Importer* importer{ nullptr }; // keep alive for embedded textures
+        glm::vec3 minBounds = glm::vec3(FLT_MAX);
+        glm::vec3 maxBounds = glm::vec3(-FLT_MAX);
 
-    public:
-        object(const std::string& glbPath, const std::shared_ptr<gl::shader>& shader)
-            : m_Shader(shader)
-        {
-            importer = new Assimp::Importer();
-            const aiScene* scene = importer->ReadFile(
-                glbPath,
-                aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_CalcTangentSpace
-            );
+        Mesh(const std::vector<Vertex>& verts, const std::vector<unsigned int>& inds)
+            : vertices(verts), indices(inds) {
+            calculateBounds();
+        }
 
-            if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode)
-                throw std::runtime_error("ASSIMP ERROR: " + std::string(importer->GetErrorString()));
+        glm::vec3 getCenter() const {
+            return (minBounds + maxBounds) * 0.5f;
+        }
+
+        glm::vec3 getExtents() const {
+            return (maxBounds - minBounds) * 0.5f;
+        }
+
+        // Get vertices for physics shape (scaled)
+        std::vector<glm::vec3> getPhysicsVertices(const glm::vec3& scale = glm::vec3(1.0f)) const {
+            std::vector<glm::vec3> result;
+            result.reserve(vertices.size());
+            for (const auto& v : vertices) {
+                result.push_back(v.position * scale);
+            }
+            return result;
+        }
+
+    private:
+        void calculateBounds() {
+            for (const auto& v : vertices) {
+                minBounds = glm::min(minBounds, v.position);
+                maxBounds = glm::max(maxBounds, v.position);
+            }
+        }
+    };
+
+    // ============ OBJECT STRUCT ============
+    struct Object {
+        // Rendering
+        std::vector<std::shared_ptr<Mesh>> meshes;
+        std::shared_ptr<shader> shader;
+        std::unordered_map<std::string, GLuint> textures;
+
+        // Transform
+        glm::vec3 position = glm::vec3(0.0f);
+        glm::quat rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        glm::vec3 scale = glm::vec3(1.0f);
+
+        // Physics
+        JPH::Body* physicsBody = nullptr;
+        JPH::BodyInterface* physicsInterface = nullptr;
+        bool hasPhysics = false;
+
+        // State
+        std::string name;
+        bool visible = true;
+
+        Object() = default;
+
+        Object(const std::string& objName) : name(objName) {}
+
+        // Load model from file
+        bool loadModel(const std::string& path) {
+            Assimp::Importer importer;
+            const aiScene* scene = importer.ReadFile(path,
+                aiProcess_Triangulate |
+                aiProcess_GenSmoothNormals |
+                aiProcess_FlipUVs);
+
+            if (!scene || !scene->mRootNode) {
+                std::cerr << "Failed to load model: " << path << std::endl;
+                return false;
+            }
 
             processNode(scene->mRootNode, scene);
-            setupMesh();
-            loadTextures(scene, glbPath);
+            return true;
         }
 
-        ~object() {
-            for (auto& t : textures) delete t.text;
-            if (importer) delete importer;
+        // Create physics body (simple box shape from bounds)
+        void createPhysicsBody(JPH::PhysicsSystem& physicsSystem, bool isStatic = true) {
+            if (meshes.empty()) return;
 
-            if (VAO) glDeleteVertexArrays(1, &VAO);
-            if (VBO) glDeleteBuffers(1, &VBO);
-            if (EBO) glDeleteBuffers(1, &EBO);
-        }
+            // Use first mesh for physics shape
+            auto& mesh = meshes[0];
+            glm::vec3 center = mesh->getCenter() * scale;
+            glm::vec3 extents = mesh->getExtents() * scale;
 
-        void addLight(const glm::vec3& pos, const glm::vec3& color) {
-            lights.push_back({ pos, color });
-        }
+            // Create box shape
+            JPH::BoxShapeSettings boxSettings(JPH::Vec3(extents.x, extents.y, extents.z));
+            JPH::ShapeSettings::ShapeResult result = boxSettings.Create();
 
-        void uploadLights() {
-            glUniform1i(m_Shader->getUniformLoc("numLights"), (GLint)lights.size());
+            if (!result.IsValid()) return;
 
-            for (size_t i = 0; i < lights.size(); ++i) {                   
-                glUniform3fv(m_Shader->getUniformLoc("lightPos", i), 1, glm::value_ptr(lights[i].position));
-                glUniform3fv(m_Shader->getUniformLoc("lightColor", i), 1, glm::value_ptr(lights[i].color));
+            JPH::Ref<JPH::Shape> shape = result.Get();
+
+            // Create body
+            JPH::EMotionType motionType = isStatic ?
+                JPH::EMotionType::Static : JPH::EMotionType::Dynamic;
+
+            auto settings = JPH::BodyCreationSettings(
+                shape,
+                JPH::RVec3Arg(position.x, position.y, position.z),
+                JPH::QuatArg(rotation.w, rotation.x, rotation.y, rotation.z),
+                motionType,
+                0 // Layer
+            );
+
+            physicsBody = physicsSystem.GetBodyInterface().CreateBody(settings);
+            if (physicsBody) {
+                physicsSystem.GetBodyInterface().AddBody(physicsBody->GetID(), JPH::EActivation::Activate);
+                physicsInterface = &physicsSystem.GetBodyInterface();
+                hasPhysics = true;
             }
         }
 
-        void setTexture2D(gl::texture2D* tex, unsigned index) {
-            if (index < textures.size())
-                textures[index].text = tex;
+        // Update transform from physics
+        void updateFromPhysics() {
+            if (!hasPhysics || !physicsBody || !physicsInterface) return;
+
+            JPH::Vec3 pos = physicsInterface->GetPosition(physicsBody->GetID());
+            JPH::Quat rot = physicsInterface->GetRotation(physicsBody->GetID());
+
+            position = glm::vec3(pos.GetX(), pos.GetY(), pos.GetZ());
+            rotation = glm::quat(rot.GetW(), rot.GetX(), rot.GetY(), rot.GetZ());
         }
 
-        void draw(const glm::mat4& model) {
-            m_Shader->useProgram();
-            m_Shader->setUniformMat4fv("model", model);
+        // Get model matrix for rendering
+        glm::mat4 getModelMatrix() const {
+            glm::mat4 mat = glm::translate(glm::mat4(1.0f), position);
+            mat *= glm::mat4_cast(rotation);
+            mat = glm::scale(mat, scale);
+            return mat;
+        }
 
-            for (int i = 0; i < textures.size(); ++i) {
-                glActiveTexture(GL_TEXTURE0 + i);
-                textures[i].text->bind(GL_TEXTURE_2D);
-                glUniform1i(m_Shader->getUniformLoc(textures[i].name), i);
+        // Simple render
+        void render() {
+            if (!visible || !shader || meshes.empty()) return;
+
+            shader->useProgram();
+            shader->setUniformMat4fv("model", getModelMatrix());
+
+            // Bind textures if any
+            int texUnit = 0;
+            for (auto& [name, texId] : textures) {
+                glActiveTexture(GL_TEXTURE0 + texUnit);
+                glBindTexture(GL_TEXTURE_2D, texId);
+                shader->setUniform1i(name.c_str(), texUnit);
+                texUnit++;
             }
 
-            uploadLights();
-
-            glBindVertexArray(VAO);
-            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT, 0);
-            glBindVertexArray(0);
-
-            glActiveTexture(GL_TEXTURE0);
+            // For now, just render first mesh
+            // You'd need VAO/VBO setup for actual rendering
         }
 
     private:
         void processNode(aiNode* node, const aiScene* scene) {
-            for (unsigned int i = 0; i < node->mNumMeshes; i++)
-                processMesh(scene->mMeshes[node->mMeshes[i]]);
-            for (unsigned int i = 0; i < node->mNumChildren; i++)
+            for (unsigned int i = 0; i < node->mNumMeshes; i++) {
+                aiMesh* aiMesh = scene->mMeshes[node->mMeshes[i]];
+                meshes.push_back(convertMesh(aiMesh));
+            }
+
+            for (unsigned int i = 0; i < node->mNumChildren; i++) {
                 processNode(node->mChildren[i], scene);
+            }
         }
 
-        void processMesh(aiMesh* mesh) {
-            size_t offset = vertices.size();
-            vertices.resize(offset + mesh->mNumVertices);
+        std::shared_ptr<Mesh> convertMesh(aiMesh* aiMesh) {
+            std::vector<Mesh::Vertex> vertices;
+            std::vector<unsigned int> indices;
 
-            for (unsigned int i = 0; i < mesh->mNumVertices; i++) {
-                vertex& v = vertices[offset + i];
+            // Convert vertices
+            for (unsigned int i = 0; i < aiMesh->mNumVertices; i++) {
+                Mesh::Vertex vertex;
 
-                v.Position = {
-                    mesh->mVertices[i].x,
-                    mesh->mVertices[i].y,
-                    mesh->mVertices[i].z
-                };
+                vertex.position = glm::vec3(
+                    aiMesh->mVertices[i].x,
+                    aiMesh->mVertices[i].y,
+                    aiMesh->mVertices[i].z
+                );
 
-                v.Normal = mesh->HasNormals() ?
-                    glm::vec3(mesh->mNormals[i].x, mesh->mNormals[i].y, mesh->mNormals[i].z) :
-                    glm::vec3(0.0f, 0.0f, 1.0f);
-
-                if (mesh->HasTextureCoords(0)) {
-                    v.TexCoords = {
-                        mesh->mTextureCoords[0][i].x,
-                        mesh->mTextureCoords[0][i].y
-                    };
-                }
-                else {
-                    v.TexCoords = glm::vec2(0.0f);
-                }
-
-                if (mesh->HasTangentsAndBitangents()) {
-                    v.Tangent = glm::vec3(
-                        mesh->mTangents[i].x,
-                        mesh->mTangents[i].y,
-                        mesh->mTangents[i].z
+                if (aiMesh->HasNormals()) {
+                    vertex.normal = glm::vec3(
+                        aiMesh->mNormals[i].x,
+                        aiMesh->mNormals[i].y,
+                        aiMesh->mNormals[i].z
                     );
                 }
-                else {
-                    v.Tangent = glm::vec3(0.0f);
-                }
-            }
 
-            if (!mesh->HasTangentsAndBitangents()) {
-                for (unsigned int i = 0; i < mesh->mNumFaces; i++) {
-                    const aiFace& face = mesh->mFaces[i];
-                    if (face.mNumIndices != 3) continue;
-
-                    vertex& v0 = vertices[offset + face.mIndices[0]];
-                    vertex& v1 = vertices[offset + face.mIndices[1]];
-                    vertex& v2 = vertices[offset + face.mIndices[2]];
-
-                    glm::vec3 e1 = v1.Position - v0.Position;
-                    glm::vec3 e2 = v2.Position - v0.Position;
-                    glm::vec2 duv1 = v1.TexCoords - v0.TexCoords;
-                    glm::vec2 duv2 = v2.TexCoords - v0.TexCoords;
-
-                    float f = 1.0f / (duv1.x * duv2.y - duv2.x * duv1.y + 1e-8f);
-
-                    glm::vec3 t(
-                        f * (duv2.y * e1.x - duv1.y * e2.x),
-                        f * (duv2.y * e1.y - duv1.y * e2.y),
-                        f * (duv2.y * e1.z - duv1.y * e2.z)
+                if (aiMesh->mTextureCoords[0]) {
+                    vertex.texCoords = glm::vec2(
+                        aiMesh->mTextureCoords[0][i].x,
+                        aiMesh->mTextureCoords[0][i].y
                     );
-
-                    v0.Tangent += t;
-                    v1.Tangent += t;
-                    v2.Tangent += t;
                 }
 
-                for (size_t i = offset; i < vertices.size(); i++)
-                    vertices[i].Tangent = glm::normalize(vertices[i].Tangent);
+                vertices.push_back(vertex);
             }
 
-            for (unsigned int i = 0; i < mesh->mNumFaces; i++)
-                for (unsigned int j = 0; j < mesh->mFaces[i].mNumIndices; j++)
-                    indices.emplace_back(mesh->mFaces[i].mIndices[j] + offset);
-        }
-
-        void loadTextures(const aiScene* scene, const std::string& modelPath) {
-            for (unsigned m = 0; m < scene->mNumMaterials; ++m) {
-                aiMaterial* mat = scene->mMaterials[m];
-
-                auto loadTex = [&](aiTextureType type, const std::string& name) {
-                    if (mat->GetTextureCount(type) == 0) return;
-
-                    aiString str;
-                    mat->GetTexture(type, 0, &str);
-
-                    if (str.C_Str()[0] == '*') {
-                        int texIndex = atoi(str.C_Str() + 1);
-                        aiTexture* tex = scene->mTextures[texIndex];
-
-                        int w, h, ch;
-                        unsigned char* data = nullptr;
-
-                        if (tex->mHeight == 0) {
-                            data = stbi_load_from_memory(
-                                reinterpret_cast<unsigned char*>(tex->pcData),
-                                tex->mWidth, &w, &h, &ch, 0
-                            );
-                            if (!data) return;
-
-                            textures.push_back({ name, new gl::texture2D(data, w, h, ch) });
-                            stbi_image_free(data);
-                        }
-                        else {
-                            w = tex->mWidth;
-                            h = tex->mHeight;
-                            ch = 4;
-
-                            std::unique_ptr<unsigned char[]> raw(new unsigned char[w * h * 4]);
-                            memcpy(raw.get(), tex->pcData, w * h * 4);
-
-                            textures.push_back({ name, new gl::texture2D(raw.get(), w, h, ch) });
-                        }
-                    }
-                    else {
-                        std::filesystem::path texPath =
-                            std::filesystem::path(modelPath).parent_path() / str.C_Str();
-
-                        if (std::filesystem::exists(texPath))
-                            textures.push_back({ name, new gl::texture2D(texPath.string()) });
-                    }
-                };
-
-                loadTex(aiTextureType_DIFFUSE, "baseColor");
-                loadTex(aiTextureType_NORMALS, "normal");
-                loadTex(aiTextureType_METALNESS, "metallicRoughness");
-                loadTex(aiTextureType_AMBIENT_OCCLUSION, "occlusion");
-                loadTex(aiTextureType_EMISSIVE, "emissive");
+            // Convert indices
+            for (unsigned int i = 0; i < aiMesh->mNumFaces; i++) {
+                aiFace face = aiMesh->mFaces[i];
+                for (unsigned int j = 0; j < face.mNumIndices; j++) {
+                    indices.push_back(face.mIndices[j]);
+                }
             }
+
+            return std::make_shared<Mesh>(vertices, indices);
         }
-
-        void setupMesh() {
-            glGenVertexArrays(1, &VAO);
-            glGenBuffers(1, &VBO);
-            glGenBuffers(1, &EBO);
-
-            glBindVertexArray(VAO);
-
-            // Use STATIC_DRAW since vertices and indices are usually not updated per frame
-            glBindBuffer(GL_ARRAY_BUFFER, VBO);
-            glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vertex), vertices.data(), GL_STATIC_DRAW);
-
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
-
-            // Position
-            glEnableVertexAttribArray(0);
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void*)offsetof(vertex, Position));
-
-            // Normal
-            glEnableVertexAttribArray(1);
-            glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void*)offsetof(vertex, Normal));
-
-            // TexCoords
-            glEnableVertexAttribArray(2);
-            glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(vertex), (void*)offsetof(vertex, TexCoords));
-
-            // Tangent
-            glEnableVertexAttribArray(3);
-            glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void*)offsetof(vertex, Tangent));
-
-            glBindVertexArray(0);
-        }
-
     };
 
-}
+    // ============ SCENE CLASS ============
+    class Scene {
+    private:
+        std::string name;
+        std::vector<std::shared_ptr<Object>> objects;
+        std::vector<std::shared_ptr<gl::player>> players;
+        std::vector<std::shared_ptr<window>> uiWindows;
+        JPH::PhysicsSystem* physicsSystem = nullptr;
+        JPH::TempAllocatorImpl* tempAllocator;
+
+    public:
+        Scene(const std::string& sceneName = "Scene") 
+            : name(sceneName) 
+        {
+            tempAllocator = new JPH::TempAllocatorImpl(10 * 1024 * 1024);
+        }
+
+        void setPhysicsSystem(JPH::PhysicsSystem* system) {
+            physicsSystem = system;
+        }
+
+        // Object management
+        std::shared_ptr<Object> addObject(const std::string& name) {
+            auto obj = std::make_shared<Object>(name);
+            objects.push_back(obj);
+            return obj;
+        }
+
+        std::shared_ptr<Object> addObject(std::shared_ptr<Object> obj) {
+            objects.push_back(obj);
+            return obj;
+        }
+
+        void removeObject(const std::string& name) {
+            objects.erase(
+                std::remove_if(objects.begin(), objects.end(),
+                    [&](const auto& obj) { return obj->name == name; }),
+                objects.end()
+            );
+        }
+
+        // Player management
+        std::shared_ptr<Object> addPlayer(const std::string& name) {
+            auto player = std::make_shared<Object>(name);
+            players.push_back(player);
+            return player;
+        }
+
+        // UI management
+        void addUIWindow(std::shared_ptr<window> uiWindow) {
+            uiWindows.push_back(uiWindow);
+        }
+
+        // Update everything
+        void update(float deltaTime) {
+            // Update physics
+
+            if (physicsSystem) {
+                physicsSystem->Update(deltaTime, 1, tempAllocator, nullptr);
+
+                // Update objects with physics
+                for (auto& obj : objects) {
+                    if (obj->hasPhysics) {
+                        obj->updateFromPhysics();
+                    }
+                }
+
+                // Update players with physics
+                for (auto& player : players) {
+                    if (player->hasPhysics) {
+                        player->updateFromPhysics();
+                    }
+                }
+            }
+        }
+
+        // Render everything
+        void render() {
+            // Render objects
+            for (auto& obj : objects) {
+                obj->render();
+            }
+
+            // Render players
+            for (auto& player : players) {
+                player->render();
+            }
+
+            // Render UI (you'd handle this with ImGui)
+            for (auto& uiWindow : uiWindows) {
+                // UI rendering code here
+            }
+        }
+
+        // Getters
+        const std::string& getName() const { return name; }
+        size_t getObjectCount() const { return objects.size(); }
+        size_t getPlayerCount() const { return players.size(); }
+
+        std::vector<std::shared_ptr<Object>> getObjects() const { return objects; }
+        std::vector<std::shared_ptr<Object>> getPlayers() const { return players; }
+
+        std::shared_ptr<Object> findObject(const std::string& name) {
+            for (auto& obj : objects) {
+                if (obj->name == name) return obj;
+            }
+            return nullptr;
+        }
+    };
+
+} // namespace gl

@@ -15,12 +15,20 @@ uniform mat4 projection;
 
 void main()
 {
+    // World-space fragment position
     FragPos = vec3(model * vec4(aPos, 1.0));
-    gl_Position = projection * view * vec4(FragPos, 1.0);
+    gl_Position = projection * view * model * vec4(aPos, 1.0);
 
-    vec3 T = normalize(mat3(model) * aTangent);
-    vec3 N = normalize(mat3(model) * aNormal);
-    vec3 B = normalize(cross(N, T));
+    // Build TBN matrix for tangent-space normal mapping
+    mat3 normalMatrix = mat3(transpose(inverse(model)));
+
+    vec3 T = normalize(normalMatrix * aTangent);
+    vec3 N = normalize(normalMatrix * aNormal);
+
+    // Orthonormalize tangent to prevent skewed TBN
+    T = normalize(T - dot(T, N) * N);
+    vec3 B = cross(N, T);
+
     TBN = mat3(T, B, N);
 
     TexCoords = aTexCoords;

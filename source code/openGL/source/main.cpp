@@ -8,6 +8,8 @@
 #include <thread>
 #include <chrono>
 
+#include <windows.h>
+
 //void GLAPIENTRY glDebugCallback(GLenum source, GLenum type, GLuint id,
 //    GLenum severity, GLsizei length,
 //    const GLchar* message, const void* userParam)
@@ -16,7 +18,12 @@
 //        << ", id=" << id << ", severity=" << severity << ")\n";
 //}
 
-int main() {
+int WINAPI WinMain(
+    HINSTANCE hInstance,
+    HINSTANCE hPrevInstance,
+    LPSTR lpCmdLine,
+    int nCmdShow
+) {
     if (!glfwInit()) return -1;
     auto window = std::make_shared<gl::window>(960, 540, "window");
     glEnable(GL_CULL_FACE);
@@ -32,15 +39,6 @@ int main() {
 
     shader->useProgram();
 
-    gl::object M4A1("resource/model/M4A1.glb", shader);
-    gl::object awp("resource/model/awp.glb", shader);
-    gl::object usp("resource/model/USPS.glb", shader);
-    gl::object model("resource/model/model.glb", shader);
-
-    // Add lights to objects so they can be rendered
-    model.addLight(glm::vec3(5.0f, 5.0f, 5.0f), glm::vec3(1.0f, 1.0f, 1.0f));
-    model.addLight(glm::vec3(-5.0f, 5.0f, -5.0f), glm::vec3(0.5f, 0.5f, 0.8f));
-
     gl::player player(gl::camera(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)), 
         window, shader);
 
@@ -53,24 +51,19 @@ int main() {
         "pause",
         glm::vec2(window->getWidth(), window->getHeight()),
         glm::vec2(0.0f),
-        true, // open
+        true,
         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove,
-        [&]() {
-            auto ui = &window->getUIWindow("pause");
-            if (ui->renderIsSuppressed) return;
+        [window, &pause, &ifpress, parent = &window->getUIWindow("pause")]() {
+            if (parent->renderIsSuppressed) return;
 
-            ui->size = glm::vec2((float)window->getWidth(), (float)window->getHeight());
+            parent->size = glm::vec2((float)window->getWidth(), (float)window->getHeight());
             float aspect = (float)window->getWidth() / 3.2f;
-            ImVec2 size(aspect, 0.75 * aspect);
+            ImVec2 size(aspect, 0.75f * aspect);
 
-            if (ImGui::Button("resume", size)) {
-                pause = false;
-            }
+            if (ImGui::Button("resume", size)) pause = false;
 
             if (ifpress) {
-                if (window->getKeyRelease(GLFW_KEY_ESCAPE)) {
-                    ifpress = false;
-                }
+                if (window->getKeyRelease(GLFW_KEY_ESCAPE)) ifpress = false;
             }
             else {
                 if (window->getKeyPress(GLFW_KEY_ESCAPE)) {
@@ -79,28 +72,29 @@ int main() {
                 }
             }
 
-            if (ImGui::Button("video settings", size)) {
-                ui->getChild("video settings")->renderIsSuppressed = false;      
-                ui->renderIsSuppressed = true;
+            if (auto child = parent->getChild("video settings")) {
+                if (ImGui::Button("video settings", size)) {
+                    child->renderIsSuppressed = false;
+                    parent->renderIsSuppressed = true;
+                }
             }
         }
     );
 
     window->addChildUIWindow(
-        "pause", 
+        "pause",
         "video settings",
         glm::vec2(window->getWidth(), window->getHeight()),
         glm::vec2(0.0f),
         true, // open
         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove,
-        [&]() {
-            auto parent = &window->getUIWindow("pause");
+        [&window, parent = &window->getUIWindow("pause"), &targetedFps, &ifpress]() {
             auto ui = parent->getChild("video settings");
             if (ui->renderIsSuppressed) return;
 
             ui->size = glm::vec2((float)window->getWidth(), (float)window->getHeight());
 
-            ImGui::DragInt("Targeted FPS: ", &targetedFps, 1.0f, 15, 1000, "%d", 0);
+            ImGui::DragInt("FPS Limit: ", &targetedFps, 1.0f, 15, 1000, "%d", 0);
 
             // Close child if Escape pressed
             if (!ifpress && window->getKeyPress(GLFW_KEY_ESCAPE)) {
@@ -113,7 +107,7 @@ int main() {
     );
 
     window->addUIWindow("fps counter", glm::vec2(200.0f, 150.0f), glm::vec2(0.0f), true, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove,
-        [&]() {
+        [&window]() {
             ImGui::Text("fps: %.3f", window->getFps());
         }
     );
@@ -160,28 +154,7 @@ int main() {
             window->setInputMode(GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             player.update();
 
-            model.draw(modelMat);
-
             weapon += window->getCursorCallBack().scrollY;
-
-            switch (weapon) {
-            case -2:
-                weapon = 1;
-            case -1: {
-                awp.draw(gl::getItemModel(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
-                break;
-            }
-            case 0: {
-                M4A1.draw(gl::getItemModel(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
-                break;
-            }
-            case 1: {
-                usp.draw(gl::getItemModel(player.getCam(), offset, scale, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), rot));
-                break;
-            }
-            case 2:
-                weapon = -1;
-            }
         }
   
         window->imguiRender();

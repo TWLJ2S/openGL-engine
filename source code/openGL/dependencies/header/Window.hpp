@@ -146,9 +146,8 @@ namespace gl {
 			bool open = true;
 			ImGuiWindowFlags flags = ImGuiWindowFlags_None;
 
-			std::vector<std::unique_ptr<UIWindow>> children;
 			UIWindow* parent = nullptr;
-			std::unordered_map<std::string, unsigned> childMap;
+			std::unordered_map<std::string, std::unique_ptr<UIWindow>> children;
 
 			bool renderIsSuppressed = false;
 
@@ -178,14 +177,13 @@ namespace gl {
 				);
 
 				child->renderIsSuppressed = true; // start hidden
-				childMap.emplace(childName, children.size());
-				children.emplace_back(std::move(child));
+				children.emplace(childName, std::move(child));
 			}
 
 			UIWindow* getChild(const std::string& name) const {
-				auto it = childMap.find(name);
-				if (it == childMap.end()) return nullptr;
-				return children[it->second].get();
+				auto it = children.find(name);
+				if (it == children.end()) return nullptr;
+				return it->second.get();
 			}
 
 			// -------------- SAFE RENDER (no Begin when suppressed) --------------
@@ -203,7 +201,7 @@ namespace gl {
 
 				// Render children recursively
 				for (auto& child : children)
-					child->render();
+					child.second->render();
 			}
 
 			void setElement(std::function<void()> f) {
@@ -211,54 +209,14 @@ namespace gl {
 			}
 		};
 
-		class UI {
-		private:
-			std::unordered_map<std::string, unsigned> iMap;
-			std::vector<std::unique_ptr<UIWindow>> ui;
-
-		public:
+		struct UI {
+			std::unordered_map<std::string, std::unique_ptr<UIWindow>> ui;
 			UI() = default;
 
-			unsigned getUIIndex(const std::string& name) const {
-				auto it = iMap.find(name);
-				if (it == iMap.end())
-					throw std::runtime_error("UI not found: " + name);
-				return it->second;
-			}
-
-			UIWindow& getUIWindow(const std::string& name) {
-				return *ui.at(getUIIndex(name));
-			}
-
-			void render(const std::string& name) const {
-				ui.at(getUIIndex(name))->render();
-			}
-
-			void addUIWindow(const std::string& n,
-				const glm::vec2& s,
-				const glm::vec2& p,
-				bool o,
-				ImGuiWindowFlags fs,
-				std::function<void()> f)
-			{
-				if (iMap.contains(n))
-					throw std::runtime_error("UI name already exists: " + n);
-
-				auto win = std::make_unique<UIWindow>(n, s, p, o, fs, std::move(f), nullptr);
-
-				iMap[n] = ui.size();
-				ui.emplace_back(std::move(win));
-			}
-
-			void addChildUIWindow(const std::string& parentName,
-				const std::string& childName,
-				const glm::vec2& s,
-				const glm::vec2& p,
-				bool o,
-				ImGuiWindowFlags fs,
-				std::function<void()> f)
-			{
-				getUIWindow(parentName).addChild(childName, s, p, o, fs, std::move(f));
+			UIWindow* getUIWindow(const std::string& name) const {
+				auto it = ui.find(name);
+				if (it == ui.end()) return nullptr;
+				return it->second.get();
 			}
 		};
 
@@ -343,7 +301,9 @@ namespace gl {
 			ImGui::EndFrame();
 		}
 
-		gl::window::UIWindow& getUIWindow(const std::string& name) { return m_UI.getUIWindow(name); }
+		UIWindow& getUIWindow(const std::string& name) {
+			return *m_UI.ui[name];
+		}
 
 		void addUIWindow(const std::string& n,
 			const glm::vec2& s = { 200.0f, 200.0f },
@@ -353,7 +313,10 @@ namespace gl {
 			std::function<void()> f = nullptr
 			) 
 		{
-			m_UI.addUIWindow(n, s, p, o, fs, f);
+			if (m_UI.ui.find(n) == m_UI.ui.end()) {
+				m_UI.ui[n] = std::make_unique<UIWindow>(n, s, p, o, fs, nullptr, nullptr);
+				m_UI.ui[n]->element = std::move(f);
+			}
 		}
 
 		void addChildUIWindow(const std::string& pn,
@@ -365,7 +328,9 @@ namespace gl {
 			std::function<void()> f = nullptr
 		)
 		{
-			m_UI.getUIWindow(pn).addChild(cn, s, p, o, fs, f);
+			auto& parent = getUIWindow(pn);
+			parent.addChild(cn, s, p, o, fs, nullptr);
+			parent.getChild(cn)->element = std::move(f);
 		}
 
 		void setUIFont(const char* path, float size = 20.0f) {

@@ -143,9 +143,9 @@ copy "$(SolutionDir)dependencies\assimp\bin\x64\assimp-vc143-mt.dll" "$(OutDir)"
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>glfw3dll.lib;glew32.lib;opengl32.lib;user32.lib;gdi32.lib;shell32.lib;assimp-vc143-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>glfw3dll.lib;glew32.lib;opengl32.lib;user32.lib;gdi32.lib;shell32.lib;assimp-vc143-mt.lib;Jolt.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(SolutionDir)dependencies\GLFW\lib;%(AdditionalLibraryDirectories);$(ProjectDir)dependencies\GLEW\lib;$(ProjectDir)dependencies\assimp\lib\x64</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
